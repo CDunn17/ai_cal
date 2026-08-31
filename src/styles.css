@@ -1,0 +1,72 @@
+:root {
+  color: #1d1a29;
+  background: #f5f2ff;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-synthesis: none;
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; min-width: 320px; }
+button, input, textarea, select { font: inherit; }
+
+.app-shell {
+  width: min(1120px, calc(100% - 40px));
+  margin: 0 auto;
+  padding: 56px 0 72px;
+}
+
+.hero, .overview, .next-step {
+  border-radius: 24px;
+}
+
+.hero {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 44px;
+  color: #fff;
+  background: radial-gradient(circle at 86% 18%, #d3c5ff 0, #a88fff 18%, transparent 42%), linear-gradient(135deg, #241957, #443082);
+}
+
+h1, h2, h3, p { margin-top: 0; }
+h1 { margin-bottom: 8px; font-size: clamp(2.7rem, 8vw, 5rem); line-height: .95; letter-spacing: -0.07em; }
+h2 { margin-bottom: 8px; font-size: 1.35rem; letter-spacing: -0.03em; }
+h3 { margin: 0; font-size: .9rem; }
+.hero-copy { max-width: 480px; margin-bottom: 0; color: #e8e0ff; font-size: 1.08rem; }
+.eyebrow { margin-bottom: 10px; color: #765acb; font-size: .72rem; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
+.hero .eyebrow { color: #cabdff; }
+.environment-badge { padding: 8px 12px; border: 1px solid #baa8ff; border-radius: 999px; color: #f1edff; font-size: .8rem; font-weight: 700; white-space: nowrap; }
+
+.overview { display: flex; align-items: center; justify-content: space-between; gap: 28px; margin-top: 24px; padding: 28px 32px; background: #fff; box-shadow: 0 16px 45px rgba(50, 34, 103, .08); }
+.overview p:last-child { margin-bottom: 0; color: #656071; }
+.people { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px; }
+.person-card { display: flex; align-items: center; min-width: 185px; gap: 10px; padding: 10px 12px; border: 1px solid #e8e3f3; border-radius: 14px; }
+.person-card strong, .person-card small { display: block; }
+.person-card small { margin-top: 2px; color: #6e687b; font-size: .73rem; }
+.avatar { display: grid; width: 31px; height: 31px; place-items: center; border-radius: 50%; background: #eee8ff; color: #513da3; font-size: .8rem; font-weight: 800; }
+
+.diagnostics { margin-top: 48px; }
+.section-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; }
+.section-heading > p { max-width: 380px; margin-bottom: 8px; color: #656071; font-size: .9rem; }
+.diagnostic-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 20px; }
+.diagnostic-card { min-height: 164px; padding: 22px; border: 1px solid #e4dff0; border-radius: 18px; background: #fff; }
+.diagnostic-card strong { display: block; margin: 14px 0 8px; font-size: 1.15rem; }
+.diagnostic-card p { margin-bottom: 0; color: #656071; font-size: .84rem; line-height: 1.45; }
+.diagnostic-heading { display: flex; align-items: center; gap: 8px; }
+.status-dot { width: 9px; height: 9px; border-radius: 50%; background: #d68062; box-shadow: 0 0 0 4px #fff0ea; }
+.status-dot.healthy { background: #2b9b77; box-shadow: 0 0 0 4px #e4f6ef; }
+
+.next-step { margin-top: 48px; padding: 30px 32px; border: 1px dashed #b9a9e5; background: #eee9ff; }
+.next-step p:last-child { max-width: 600px; margin-bottom: 0; color: #5d526d; }
+
+@media (max-width: 760px) {
+  .app-shell { width: min(100% - 28px, 1120px); padding-top: 20px; }
+  .hero, .overview, .section-heading { display: block; }
+  .hero { padding: 32px 24px; }
+  .environment-badge { display: inline-block; margin-top: 22px; }
+  .overview { padding: 24px; }
+  .people { justify-content: flex-start; margin-top: 22px; }
+  .diagnostic-grid { grid-template-columns: 1fr; }
+  .section-heading > p { margin-top: 16px; }
+}

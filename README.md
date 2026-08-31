@@ -88,6 +88,23 @@ For this project, **Cloudflare Workers with static assets plus D1** is the recom
 
 Cloudflare Pages is also viable for a purely static, local-seed proof of concept. Once the app has API routes or SSR, set security headers in Worker/Function responses—Pages `_headers` rules do not apply to Pages Functions. [Pages headers documentation](https://developers.cloudflare.com/pages/configuration/headers/)
 
+### Run locally
+
+```sh
+npm install
+npm run dev          # React/Vite UI with the development security headers
+npm run dev:worker   # production build served through the local Cloudflare Worker
+```
+
+The Worker also serves `GET /api/health`, which is a no-data smoke-test endpoint. Before WebMCP tools are added, open the deployed app’s runtime-check page in a supported browser and verify that origin isolation is active. The project verifies its foundation with:
+
+```sh
+npm run lint
+npm run typecheck
+npm test
+npm run build
+```
+
 ### Core model
 
 Keep the first schema intentionally boring:
