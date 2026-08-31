@@ -135,6 +135,39 @@ export class CalendarStore {
     this.recordDraft("discarded", draftId, activeUserId, "Discarded the draft for “" + draft.event.title + "”.");
   }
 
+  updateDraft(activeUserId: string, draftId: string, input: unknown): EventDraft {
+    this.assertUser(activeUserId);
+    this.removeExpiredDrafts();
+    const draft = this.drafts.get(draftId);
+    if (!draft) {
+      throw new CalendarStoreError(404, "Draft not found or already expired.");
+    }
+    if (draft.ownerId !== activeUserId) {
+      throw new CalendarStoreError(403, "You can only change your own drafts.");
+    }
+    const { expectedRevision, ...changes } = updateEventInputSchema.parse(input);
+    if (expectedRevision !== draft.revision) {
+      throw new CalendarStoreError(409, "This draft changed. Refresh and review it before updating.");
+    }
+    if (changes.calendarId && changes.calendarId !== draft.event.calendarId) {
+      this.assertCalendarOwner(changes.calendarId, activeUserId);
+    }
+    if (changes.attendeeIds) {
+      this.assertKnownAttendees(changes.attendeeIds);
+    }
+    const event = calendarEventSchema.parse({
+      ...draft.event,
+      ...changes,
+      attendeeIds: changes.attendeeIds ? [...new Set([activeUserId, ...changes.attendeeIds])] : draft.event.attendeeIds,
+      revision: draft.event.revision + 1,
+      status: "draft"
+    });
+    const updated = eventDraftSchema.parse({ ...draft, event, revision: draft.revision + 1 });
+    this.drafts.set(updated.id, updated);
+    this.recordDraft("updated", updated.id, activeUserId, "Updated the reviewable draft for “" + updated.event.title + "”.");
+    return updated;
+  }
+
   update(activeUserId: string, eventId: string, input: unknown): CalendarEvent {
     this.assertUser(activeUserId);
     const existing = this.events.get(eventId);

@@ -45,6 +45,13 @@ button { cursor: pointer; }
 .draft-card:hover { background: #f3eeff; }
 .draft-card strong { font-size: .8rem; }
 .draft-card span { color: #776e87; font-size: .69rem; }
+.tool-activity-list { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; }
+.tool-activity-list li { display: grid; grid-template-columns: 8px 1fr; gap: 8px; align-items: start; }
+.tool-activity-list strong { color: #554f61; font-size: .75rem; }
+.tool-activity-list p { margin: 2px 0 0; color: #756e7d; font-size: .7rem; line-height: 1.35; }
+.activity-dot { display: block; width: 8px; height: 8px; margin-top: 4px; border-radius: 50%; background: #9a93a3; }
+.activity-dot.succeeded { background: #379773; }
+.activity-dot.failed, .activity-dot.blocked { background: #bd7253; }
 
 .week-panel { overflow: hidden; border: 1px solid #e6e2ec; border-radius: 16px; background: #fff; box-shadow: 0 12px 32px rgba(41, 31, 72, .06); }
 .week-title-row { display: grid; grid-template-columns: 72px 1fr; align-items: center; min-height: 54px; border-bottom: 1px solid #ece9f1; }

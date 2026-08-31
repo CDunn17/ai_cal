@@ -66,7 +66,14 @@ describe("CalendarStore", () => {
     expect(store.stateFor("alex").events).toHaveLength(demoData.events.length);
     expect(store.stateFor("alex").drafts).toEqual([draft]);
 
-    store.discardDraft("alex", draft.id, draft.revision);
+    const updated = store.updateDraft("alex", draft.id, {
+      expectedRevision: draft.revision,
+      title: "Refined launch review"
+    });
+    expect(updated.revision).toBe(2);
+    expect(updated.event.title).toBe("Refined launch review");
+
+    store.discardDraft("alex", updated.id, updated.revision);
     expect(store.stateFor("alex").drafts).toEqual([]);
     expect(store.stateFor("alex").auditEntries[0].action).toBe("discarded");
   });

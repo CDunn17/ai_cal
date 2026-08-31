@@ -116,6 +116,7 @@ Milestones 2 and 3 run a deterministic, fictional demo identity (Alex) through t
 | PATCH /api/events/:id | Edits or moves an event only on the active user’s calendar. Every request includes the reviewed revision; stale writes are rejected with 409 Conflict. |
 | POST /api/proposals | Searches 15-minute slots using working hours, protected busy time, travel buffers, and time-of-day preferences. Results contain free/busy-derived reasons and warnings, never a private event’s details. |
 | POST /api/event-drafts | Creates a separate, 24-hour reviewable draft on the active user’s calendar. It remains out of the committed event collection and cannot send invitations. |
+| PATCH /api/event-drafts/:id | Updates a visible draft by current revision, preserving draft-only status. |
 | DELETE /api/event-drafts/:id | Discards a pending draft only when its current revision is supplied. |
 
 The Worker store is intentionally in-memory for the seeded demo, so its state resets when a local Worker restarts. D1 persistence is the next infrastructure addition; the command and permission boundary will remain unchanged.
@@ -157,6 +158,15 @@ Exact API shapes may evolve while WebMCP remains a proposed standard, so keep re
 - Return minimal structured data. A free/busy result says `busy`, `free`, or `tentative`, not “private therapy appointment.”
 - Treat event titles, descriptions, attendee names, and locations as untrusted content. Return them as data, never re-inject them into tool instructions.
 - Give read-only tools the appropriate read-only annotation when available.
+
+### Current WebMCP adapter
+
+Milestone 4 registers nine imperative tools from a small browser-only adapter. It uses the official WebMCP TypeScript declarations, registers tools with an AbortController for component-lifecycle cleanup, and makes every tool call visible in the in-app Agent activity rail.
+
+- Read tools return a privacy-filtered state projection or scheduling options and carry the read-only annotation.
+- Draft tools call the same Worker commands as the human UI; a successful mutation refreshes the visible calendar state.
+- Tool outputs that can contain event data carry the untrusted-content annotation. Calendar titles, agenda, locations, and attendee data are never treated as instructions.
+- Commit is registered only to communicate the guardrail: it returns a structured blocked result until the next milestone adds a visible human confirmation gate. It cannot create an event or send invitations.
 
 ## Safety, privacy, and control
 

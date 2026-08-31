@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type CSSProperties, type FormEvent } from "react";
 import type { CalendarEvent, EventDraft, ScheduleCandidate } from "./domain/contracts";
 import type { CalendarState } from "./domain/calendar-store";
+import { ACTIVITY_EVENT, registerCalendarTools, STATE_CHANGED_EVENT, type ToolActivity } from "./webmcp/calendar-tools";
 
 const DISPLAY_TIME_ZONE = "America/New_York";
 const WEEK_DAYS = [
@@ -127,6 +128,7 @@ export function App() {
   const [proposalError, setProposalError] = useState<string | null>(null);
   const [isFindingTime, setIsFindingTime] = useState(false);
   const [selectedDraftId, setSelectedDraftId] = useState<string | null>(null);
+  const [toolActivities, setToolActivities] = useState<ToolActivity[]>([]);
 
   const refresh = async () => {
     try {
@@ -153,6 +155,27 @@ export function App() {
       });
     return () => {
       isCurrent = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let disposeTools: () => void = () => {};
+    const onActivity = (event: Event) => {
+      const activity = (event as CustomEvent<ToolActivity>).detail;
+      setToolActivities((current) => [activity, ...current].slice(0, 8));
+    };
+    const onStateChanged = () => {
+      void refresh();
+    };
+    window.addEventListener(ACTIVITY_EVENT, onActivity);
+    window.addEventListener(STATE_CHANGED_EVENT, onStateChanged);
+    void registerCalendarTools().then((dispose) => {
+      disposeTools = dispose;
+    });
+    return () => {
+      window.removeEventListener(ACTIVITY_EVENT, onActivity);
+      window.removeEventListener(STATE_CHANGED_EVENT, onStateChanged);
+      disposeTools();
     };
   }, []);
 
@@ -330,6 +353,12 @@ export function App() {
             <p className="eyebrow">Pending drafts</p>
             {state.drafts.length === 0 ? <p className="muted">Scheduling proposals become visible drafts before anything is committed.</p> : (
               <div className="draft-list">{state.drafts.map((draft) => <button type="button" className="draft-card" key={draft.id} onClick={() => setSelectedDraftId(draft.id)}><strong>{draft.event.title}</strong><span>{timeLabel(draft.event.startsAt)} · review required</span></button>)}</div>
+            )}
+          </section>
+          <section className="tool-activity-section">
+            <p className="eyebrow">Agent activity</p>
+            {toolActivities.length === 0 ? <p className="muted">WebMCP tool calls will appear here in real time.</p> : (
+              <ol className="tool-activity-list">{toolActivities.map((activity) => <li key={activity.id}><span className={"activity-dot " + activity.outcome} /><div><strong>{activity.tool}</strong><p>{activity.summary}</p></div></li>)}</ol>
             )}
           </section>
           <section className="audit-section">

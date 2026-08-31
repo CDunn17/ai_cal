@@ -81,11 +81,14 @@ export default {
       if (request.method === "POST" && url.pathname === "/api/event-drafts") {
         return apiResponse({ draft: calendarStore.createDraft(activeDemoUserId, await requestJson(request)) }, { status: 201 });
       }
+      const draftMatch = url.pathname.match(/^\/api\/event-drafts\/([^/]+)$/);
+      if (request.method === "PATCH" && draftMatch) {
+        return apiResponse({ draft: calendarStore.updateDraft(activeDemoUserId, decodeURIComponent(draftMatch[1]), await requestJson(request)) });
+      }
       const eventMatch = url.pathname.match(/^\/api\/events\/([^/]+)$/);
       if (request.method === "PATCH" && eventMatch) {
         return apiResponse({ event: calendarStore.update(activeDemoUserId, decodeURIComponent(eventMatch[1]), await requestJson(request)) });
       }
-      const draftMatch = url.pathname.match(/^\/api\/event-drafts\/([^/]+)$/);
       if (request.method === "DELETE" && draftMatch) {
         const body = await requestJson(request);
         const expectedRevision =
