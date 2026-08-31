@@ -1,0 +1,29 @@
+# Release and submission checklist
+
+Use this checklist after the Cloudflare deployment is live. It combines the project’s release checks with the [WebMCP Devpost rules](https://webmcp.devpost.com/rules).
+
+## Deployment
+
+- [ ] A real D1 database ID replaces the placeholder in `wrangler.jsonc`.
+- [ ] `npx wrangler d1 migrations apply coplan --remote` completes successfully.
+- [ ] `npm run deploy` prints a stable public HTTPS URL.
+- [ ] `GET /api/health` succeeds on that URL.
+- [ ] The root and API responses carry the required origin-isolation and `tools=(self)` headers.
+- [ ] `crossOriginIsolated` is `true` in Chrome on the public URL.
+- [ ] The live app can create, confirm, and persist a draft through a refresh.
+
+## WebMCP proof
+
+- [ ] Test the live URL in Chrome with WebMCP testing enabled.
+- [ ] Test the same URL in ChatGPT’s in-app browser, if supported for the submission.
+- [ ] Capture tool activity for context, availability, proposal, and draft creation.
+- [ ] Demonstrate that `commit_event` is blocked and that only the visible human confirmation adds the event.
+
+## Devpost submission
+
+- [ ] Public source repository includes the Apache-2.0 [`LICENSE`](../LICENSE).
+- [ ] The deployed URL is public, functional, and does not require a special account or paid service to judge.
+- [ ] Record a public, English, narrated YouTube video under three minutes using [`DEMO_SCRIPT.md`](DEMO_SCRIPT.md).
+- [ ] Replace both placeholders in [`DEVPOST.md`](DEVPOST.md) with the live URL and video URL.
+- [ ] Add the deployed URL, source URL, and video URL to the Devpost submission.
+- [ ] Confirm all team members, eligibility, and submission-time requirements directly against the official rules before submitting.

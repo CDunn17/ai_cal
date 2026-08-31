@@ -24,12 +24,12 @@ The demo should make four things unmistakable:
 ### Human experience
 
 - Week and day views with a clear timezone selector.
-- Create, edit, move, cancel, and view events through ordinary calendar UI.
+- Create, edit, move, and view events through ordinary calendar UI.
 - Team availability overlay, focus-time blocks, working hours, and travel buffers.
 - Event details with attendees, agenda, location, visibility, and scheduling notes.
 - A **Proposals** surface showing agent-created candidates and a before/after diff.
 - An **Activity** rail recording the tools used, the inputs supplied, the result, and the human approval or rejection.
-- Undo for local changes and cancellation of uncommitted drafts.
+- Discard for uncommitted drafts.
 
 ### Agent experience
 
@@ -43,7 +43,7 @@ The tools expose stable application intent and structured data—not components,
 | `get_event_details` | No | Returns a single event only when it is visible to the active user. |
 | `create_event_draft` | Draft only | Creates a visible, server-validated draft with a 24-hour expiry. It cannot send invitations. |
 | `update_event_draft` | Draft only | Changes an existing draft by ID and returns a compact, current draft projection. |
-| `commit_event` | Currently blocked | Registered to explain the confirmation boundary; it cannot commit a draft or send invitations until the explicit-review milestone is implemented. |
+| `commit_event` | Currently blocked | Registered to explain the confirmation boundary; it cannot commit a draft or send invitations. The separate human UI owns the visible confirmation flow. |
 | `discard_event_draft` | Yes, reversible | Deletes a pending draft owned by the active user. |
 | `resolve_conflict` | No | Suggests alternatives for an event without moving or cancelling anything. |
 
@@ -70,7 +70,7 @@ ChatGPT / browser agent
      │              │
      │              └── React UI: calendar, proposal tray, activity rail
      ▼
- Cloudflare Worker API ─── D1 (events, drafts, preferences, audit entries)
+ Cloudflare Worker API ─── D1 (revision-checked seeded-demo state)
 ```
 
 Build the domain service first. Both the human UI and every WebMCP `execute` callback must invoke the same typed commands and policy checks. The agent is never allowed to automate our UI, bypass validation, call a raw SQL endpoint, or make a direct write that the normal product path could not make.
@@ -96,7 +96,7 @@ npm run dev          # React/Vite UI with the development security headers
 npm run dev:worker   # production build served through the local Cloudflare Worker
 ```
 
-The Worker also serves `GET /api/health`, which is a no-data smoke-test endpoint. Before WebMCP tools are added, open the deployed app’s runtime-check page in a supported browser and verify that origin isolation is active. The project verifies its foundation with:
+The Worker also serves `GET /api/health`, which is a no-data smoke-test endpoint. In a supported browser, verify `crossOriginIsolated` is true in the deployed app’s developer tools. The project verifies its foundation with:
 
 ```sh
 npm run lint
@@ -135,6 +135,13 @@ npm run dev:worker
 ```
 
 Before a remote deployment, create a D1 database named coplan, replace the placeholder database ID in wrangler.jsonc with the returned ID, and apply the migration remotely. The placeholder prevents accidental deployment to an unintended database.
+
+### Submission kit
+
+- [Cloudflare deployment and verification](docs/DEPLOYMENT.md)
+- [Two-minute narrated demo script](docs/DEMO_SCRIPT.md)
+- [Paste-ready Devpost submission copy](docs/DEVPOST.md)
+- [Release and Devpost checklist](docs/RELEASE_CHECKLIST.md)
 
 ### Core model
 
@@ -274,12 +281,12 @@ Each milestone is independently demoable and small enough to review before movin
 
 ### 6. Deploy, prove, and submit
 
-- Deploy the Worker and D1 database to Cloudflare on a stable public URL.
-- Test the live URL in ChatGPT’s in-app browser and Chrome with WebMCP testing enabled.
-- Record the under-three-minute demo: request → tool activity → proposals → user adjustment → draft diff → confirmation → committed calendar event.
-- Add setup instructions, architecture diagram, open-source license, screenshots, and the Devpost description.
+- [x] Add reviewer setup, architecture documentation, a submission checklist, a two-minute demo script, and paste-ready Devpost copy in [`docs/`](docs/).
+- [ ] Deploy the Worker and D1 database to Cloudflare on a stable public URL.
+- [ ] Test the live URL in ChatGPT’s in-app browser and Chrome with WebMCP testing enabled.
+- [ ] Record the under-three-minute demo: request → tool activity → proposals → user adjustment → draft diff → confirmation → committed calendar event.
 
-**Done when:** a fresh reviewer can open the live URL, reproduce the demo, inspect the source, and understand why WebMCP improves the experience.
+**Done when:** a fresh reviewer can open the live URL, reproduce the demo, inspect the source, and understand why WebMCP improves the experience. See [`docs/RELEASE_CHECKLIST.md`](docs/RELEASE_CHECKLIST.md) for the remaining external steps.
 
 ## Test plan
 

@@ -8,6 +8,7 @@
     "dev": "vite",
     "dev:worker": "npm run build && wrangler dev",
     "db:migrate:local": "wrangler d1 migrations apply coplan --local",
+    "db:migrate:remote": "wrangler d1 migrations apply coplan --remote",
     "deploy": "npm run build && wrangler deploy",
     "lint": "eslint .",
     "test": "vitest run",
