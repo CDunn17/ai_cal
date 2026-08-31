@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { calendarTools, registerCalendarTools } from "./calendar-tools";
+import { calendarTools, formatToolResult, MAX_TOOL_OUTPUT_BYTES, registerCalendarTools } from "./calendar-tools";
 
 describe("calendar WebMCP tools", () => {
   it("exposes the complete scoped calendar tool set", () => {
@@ -41,5 +41,15 @@ describe("calendar WebMCP tools", () => {
 
     expect(registered).toHaveLength(9);
     delete (globalThis as { document?: unknown }).document;
+  });
+
+  it("bounds tool output by UTF-8 byte size even when content is untrusted and large", () => {
+    const output = formatToolResult("ok", { agenda: "🗓️".repeat(2_000) });
+
+    expect(new TextEncoder().encode(output).byteLength).toBeLessThanOrEqual(MAX_TOOL_OUTPUT_BYTES);
+    expect(JSON.parse(output)).toMatchObject({
+      status: "ok",
+      data: { truncated: true }
+    });
   });
 });

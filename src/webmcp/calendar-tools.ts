@@ -1,3 +1,6 @@
+import type { CalendarEvent, EventDraft, ScheduleCandidate } from "../domain/contracts";
+import type { CalendarState } from "../domain/calendar-store";
+
 export type ToolActivity = Readonly<{
   id: string;
   tool: string;
@@ -9,6 +12,7 @@ export type ToolActivity = Readonly<{
 
 const ACTIVITY_EVENT = "coplan:tool-activity";
 const STATE_CHANGED_EVENT = "coplan:calendar-state-changed";
+export const MAX_TOOL_OUTPUT_BYTES = 1_400;
 
 type JsonRecord = Record<string, unknown>;
 
@@ -24,8 +28,55 @@ function report(tool: string, mode: ToolActivity["mode"], outcome: ToolActivity[
   );
 }
 
-function result(status: "ok" | "error" | "blocked", data: unknown): string {
-  return JSON.stringify({ status, data });
+export function formatToolResult(status: "ok" | "error" | "blocked", data: unknown): string {
+  const serialized = JSON.stringify({ status, data });
+  if (new TextEncoder().encode(serialized).byteLength <= MAX_TOOL_OUTPUT_BYTES) return serialized;
+  return JSON.stringify({
+    status,
+    data: {
+      truncated: true,
+      message: "Result exceeded the tool output budget. Use a narrower read or a specific event ID."
+    }
+  });
+}
+
+function clip(value: string | undefined, maxLength: number): string | undefined {
+  if (!value) return value;
+  return value.length <= maxLength ? value : value.slice(0, maxLength - 1) + "…";
+}
+
+function compactEvent(event: CalendarEvent) {
+  return {
+    id: event.id,
+    revision: event.revision,
+    title: clip(event.title, 160),
+    startsAt: event.startsAt,
+    endsAt: event.endsAt,
+    timeZone: event.timeZone,
+    visibility: event.visibility,
+    attendeeIds: event.attendeeIds.slice(0, 10),
+    location: clip(event.location, 120),
+    agenda: clip(event.agenda, 240)
+  };
+}
+
+function compactDraft(draft: EventDraft) {
+  return {
+    draftId: draft.id,
+    revision: draft.revision,
+    expiresAt: draft.expiresAt,
+    event: compactEvent(draft.event)
+  };
+}
+
+function compactCandidates(candidates: ScheduleCandidate[]) {
+  return candidates.slice(0, 3).map((candidate) => ({
+    startsAt: candidate.startsAt,
+    endsAt: candidate.endsAt,
+    score: candidate.score,
+    reasons: candidate.reasons.slice(0, 2).map((reason) => clip(reason, 140)),
+    warnings: candidate.warnings.slice(0, 1).map((warning) => clip(warning, 140))
+  }));
 }
 
 async function api<T>(url: string, init?: RequestInit, signal?: AbortSignal): Promise<T> {
@@ -53,11 +104,11 @@ async function runTool(
     if (mode === "draft") {
       window.dispatchEvent(new Event(STATE_CHANGED_EVENT));
     }
-    return result("ok", data);
+    return formatToolResult("ok", data);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Calendar tool failed.";
     report(tool, mode, "failed", "Agent could not complete " + tool + ": " + message);
-    return result("error", { message });
+    return formatToolResult("error", { message });
   }
 }
 
@@ -84,10 +135,18 @@ export const calendarTools: WebMCP.ModelContextTool[] = [
   {
     name: "get_calendar_context",
     title: "Get calendar context",
-    description: "Read the active user's visible calendar range, calendars, preferences, pending drafts, and safe free/busy event projection.",
+    description: "Read the active user's calendar identities, up to three pending drafts, and a count of visible events. It never returns a full event list.",
     inputSchema: schema({}),
     annotations: { readOnlyHint: true, untrustedContentHint: true },
-    execute: async () => runTool("get_calendar_context", "read", () => api("/api/calendar-state"))
+    execute: async () => runTool("get_calendar_context", "read", async () => {
+      const state = await api<CalendarState>("/api/calendar-state");
+      return {
+        activeUserId: state.activeUserId,
+        calendars: state.calendars.map((calendar) => ({ id: calendar.id, name: clip(calendar.name, 80), timeZone: calendar.timeZone })),
+        pendingDrafts: state.drafts.slice(0, 3).map(compactDraft),
+        visibleEventCount: state.events.length
+      };
+    })
   },
   {
     name: "find_availability",
@@ -96,8 +155,8 @@ export const calendarTools: WebMCP.ModelContextTool[] = [
     inputSchema: schema(timeRangeProperties, ["attendeeIds", "durationMinutes", "rangeStartsAt", "rangeEndsAt"]),
     annotations: { readOnlyHint: true, untrustedContentHint: true },
     execute: async (input, { signal }) => runTool("find_availability", "read", async () => {
-      const response = await api<{ proposals: unknown[] }>("/api/proposals", { method: "POST", body: JSON.stringify(input) }, signal);
-      return { candidates: response.proposals };
+      const response = await api<{ proposals: ScheduleCandidate[] }>("/api/proposals", { method: "POST", body: JSON.stringify(input) }, signal);
+      return { candidates: compactCandidates(response.proposals) };
     })
   },
   {
@@ -106,7 +165,10 @@ export const calendarTools: WebMCP.ModelContextTool[] = [
     description: "Rank feasible slots using working hours, focus blocks, travel buffers, and stated time-of-day preferences. This does not create or change events.",
     inputSchema: schema(timeRangeProperties, ["attendeeIds", "durationMinutes", "rangeStartsAt", "rangeEndsAt"]),
     annotations: { readOnlyHint: true, untrustedContentHint: true },
-    execute: async (input, { signal }) => runTool("propose_schedule", "read", () => api("/api/proposals", { method: "POST", body: JSON.stringify(input) }, signal))
+    execute: async (input, { signal }) => runTool("propose_schedule", "read", async () => {
+      const response = await api<{ proposals: ScheduleCandidate[] }>("/api/proposals", { method: "POST", body: JSON.stringify(input) }, signal);
+      return { proposals: compactCandidates(response.proposals) };
+    })
   },
   {
     name: "get_event_details",
@@ -115,10 +177,10 @@ export const calendarTools: WebMCP.ModelContextTool[] = [
     inputSchema: schema({ eventId: { type: "string" } }, ["eventId"]),
     annotations: { readOnlyHint: true, untrustedContentHint: true },
     execute: async (input) => runTool("get_event_details", "read", async () => {
-      const state = await api<{ events: Array<{ id: string }> }>("/api/calendar-state");
+      const state = await api<CalendarState>("/api/calendar-state");
       const event = state.events.find((candidate) => candidate.id === input.eventId);
       if (!event) throw new Error("Event not found in the active user's visible calendar.");
-      return { event };
+      return { event: compactEvent(event) };
     })
   },
   {
@@ -127,7 +189,10 @@ export const calendarTools: WebMCP.ModelContextTool[] = [
     description: "Create a visible, pending event draft owned by the active user. This never creates a committed event or sends invitations.",
     inputSchema: schema(eventProperties, ["calendarId", "title", "startsAt", "endsAt", "timeZone", "visibility"]),
     annotations: { readOnlyHint: false, untrustedContentHint: true },
-    execute: async (input, { signal }) => runTool("create_event_draft", "draft", () => api("/api/event-drafts", { method: "POST", body: JSON.stringify(input) }, signal))
+    execute: async (input, { signal }) => runTool("create_event_draft", "draft", async () => {
+      const response = await api<{ draft: EventDraft }>("/api/event-drafts", { method: "POST", body: JSON.stringify(input) }, signal);
+      return { draft: compactDraft(response.draft) };
+    })
   },
   {
     name: "update_event_draft",
@@ -137,7 +202,8 @@ export const calendarTools: WebMCP.ModelContextTool[] = [
     annotations: { readOnlyHint: false, untrustedContentHint: true },
     execute: async (input, { signal }) => runTool("update_event_draft", "draft", async () => {
       const { draftId, ...changes } = input;
-      return api("/api/event-drafts/" + draftId, { method: "PATCH", body: JSON.stringify(changes) }, signal);
+      const response = await api<{ draft: EventDraft }>("/api/event-drafts/" + draftId, { method: "PATCH", body: JSON.stringify(changes) }, signal);
+      return { draft: compactDraft(response.draft) };
     })
   },
   {
@@ -148,7 +214,7 @@ export const calendarTools: WebMCP.ModelContextTool[] = [
     annotations: { readOnlyHint: false },
     execute: async () => {
       report("commit_event", "blocked", "blocked", "Commit is waiting for the human confirmation milestone.");
-      return result("blocked", { message: "Human confirmation is required. This build does not commit drafts or send invitations." });
+      return formatToolResult("blocked", { message: "Human confirmation is required. This build does not commit drafts or send invitations." });
     }
   },
   {
@@ -168,14 +234,15 @@ export const calendarTools: WebMCP.ModelContextTool[] = [
     inputSchema: schema({ eventId: { type: "string" }, rangeStartsAt: { type: "string", format: "date-time" }, rangeEndsAt: { type: "string", format: "date-time" } }, ["eventId", "rangeStartsAt", "rangeEndsAt"]),
     annotations: { readOnlyHint: true, untrustedContentHint: true },
     execute: async (input, { signal }) => runTool("resolve_conflict", "read", async () => {
-      const state = await api<{ activeUserId: string; events: Array<{ id: string; attendeeIds: string[]; startsAt: string; endsAt: string }> }>("/api/calendar-state", undefined, signal);
+      const state = await api<CalendarState>("/api/calendar-state", undefined, signal);
       const event = state.events.find((candidate) => candidate.id === input.eventId);
       if (!event) throw new Error("Event not found in the active user's visible calendar.");
       const durationMinutes = Math.round((Date.parse(event.endsAt) - Date.parse(event.startsAt)) / 60_000);
-      return api("/api/proposals", {
+      const response = await api<{ proposals: ScheduleCandidate[] }>("/api/proposals", {
         method: "POST",
         body: JSON.stringify({ attendeeIds: event.attendeeIds.filter((id) => id !== state.activeUserId), durationMinutes, rangeStartsAt: input.rangeStartsAt, rangeEndsAt: input.rangeEndsAt })
       }, signal);
+      return { alternatives: compactCandidates(response.proposals) };
     })
   }
 ];

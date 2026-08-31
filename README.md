@@ -37,17 +37,17 @@ The tools expose stable application intent and structured data—not components,
 
 | Tool | Mutation | Contract |
 | --- | --- | --- |
-| `get_calendar_context` | No | Returns the currently visible range, timezone, selected calendars, and active scheduling preferences. |
+| `get_calendar_context` | No | Returns the active user’s calendar identities, a bounded list of pending drafts, and a visible-event count—never a full event list. |
 | `find_availability` | No | Finds feasible time windows for a supplied attendee set and constraints. Results are minimised busy/free summaries, never another person’s private event details. |
 | `propose_schedule` | No | Ranks candidate slots and explains the relevant trade-offs: focus time, work hours, buffers, and timezone fairness. |
 | `get_event_details` | No | Returns a single event only when it is visible to the active user. |
-| `create_event_draft` | Draft only | Creates a visible draft with an expiry, validation result, and conflict warnings. It cannot send invitations. |
-| `update_event_draft` | Draft only | Changes an existing draft by ID and returns the full computed diff. |
-| `commit_event` | Yes, confirmation required | Converts one reviewed draft into an event and sends invitations only after a user-approved confirmation in the app. |
+| `create_event_draft` | Draft only | Creates a visible, server-validated draft with a 24-hour expiry. It cannot send invitations. |
+| `update_event_draft` | Draft only | Changes an existing draft by ID and returns a compact, current draft projection. |
+| `commit_event` | Currently blocked | Registered to explain the confirmation boundary; it cannot commit a draft or send invitations until the explicit-review milestone is implemented. |
 | `discard_event_draft` | Yes, reversible | Deletes a pending draft owned by the active user. |
 | `resolve_conflict` | No | Suggests alternatives for an event without moving or cancelling anything. |
 
-Every result should include stable IDs, a succinct human-readable summary, the current revision, validation/conflict warnings, and an explicit next safe action. Tool descriptions must state precisely what is read or changed; they must never contain instructions supplied by calendar content or event attendees.
+Where a response identifies a calendar item, it includes a stable ID and current revision. Each response is narrowly scoped to the immediate task; tool descriptions state precisely what is read or changed and never contain instructions supplied by calendar content or event attendees.
 
 ## Product boundaries
 
@@ -119,7 +119,20 @@ Milestones 2 and 3 run a deterministic, fictional demo identity (Alex) through t
 | PATCH /api/event-drafts/:id | Updates a visible draft by current revision, preserving draft-only status. |
 | DELETE /api/event-drafts/:id | Discards a pending draft only when its current revision is supplied. |
 
-The Worker store is intentionally in-memory for the seeded demo, so its state resets when a local Worker restarts. D1 persistence is the next infrastructure addition; the command and permission boundary will remain unchanged.
+The seeded demo uses a D1-backed state record. It is deliberately compact for the hackathon, while the Worker command and permission boundary remains suitable for a later normalized calendar schema.
+
+### D1 persistence
+
+The Worker now persists its complete seeded-demo state in D1 through a revision-checked state record. This preserves drafts, committed events, and audit entries across Worker isolates while retaining the existing validation boundary.
+
+For local development, apply the migration before running the Worker:
+
+```sh
+npm run db:migrate:local
+npm run dev:worker
+```
+
+Before a remote deployment, create a D1 database named coplan, replace the placeholder database ID in wrangler.jsonc with the returned ID, and apply the migration remotely. The placeholder prevents accidental deployment to an unintended database.
 
 ### Core model
 
@@ -166,6 +179,7 @@ Milestone 4 registers nine imperative tools from a small browser-only adapter. I
 - Read tools return a privacy-filtered state projection or scheduling options and carry the read-only annotation.
 - Draft tools call the same Worker commands as the human UI; a successful mutation refreshes the visible calendar state.
 - Tool outputs that can contain event data carry the untrusted-content annotation. Calendar titles, agenda, locations, and attendee data are never treated as instructions.
+- Every adapter response is a structured, UTF-8 byte-bounded result (1.4 KB maximum). Context returns calendar identities, at most three pending drafts, and a count; candidate tools return at most three compact slots. Oversized output is replaced with a safe truncated result that tells the agent to use a narrower read.
 - Commit is registered only to communicate the guardrail: it returns a structured blocked result until the next milestone adds a visible human confirmation gate. It cannot create an event or send invitations.
 
 ## Safety, privacy, and control
@@ -184,7 +198,7 @@ Calendar access is sensitive. These guardrails are product requirements, not pol
 - **Read → propose → draft → review → confirm → commit.** No tool skips a state.
 - `find_availability`, `propose_schedule`, and `resolve_conflict` are read-only.
 - `create_event_draft` and `update_event_draft` only affect drafts owned by the active user and must produce a visible UI artifact.
-- `commit_event` accepts only a non-expired, reviewed draft ID and revision. The app renders a confirmation dialog detailing invitees, time, timezone, conflicts, and notifications before committing.
+- `commit_event` is intentionally blocked in the current build. The planned confirmation gate will accept only a non-expired, reviewed draft ID and revision, then render the confirmation dialog before any commit.
 - Never let an agent delete a calendar, bulk-edit events, cancel an event, or send invitations without the in-app confirmation in v1.
 - Apply rate limits, idempotency keys, audit logging, and optimistic-concurrency checks to writes.
 

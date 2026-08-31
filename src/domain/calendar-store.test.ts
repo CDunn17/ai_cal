@@ -77,4 +77,20 @@ describe("CalendarStore", () => {
     expect(store.stateFor("alex").drafts).toEqual([]);
     expect(store.stateFor("alex").auditEntries[0].action).toBe("discarded");
   });
+
+  it("round-trips drafts and audit history through a persistence snapshot", () => {
+    const original = new CalendarStore(demoData);
+    const draft = original.createDraft("alex", {
+      calendarId: "alex-main",
+      title: "Persist me",
+      startsAt: "2026-09-10T18:00:00.000Z",
+      endsAt: "2026-09-10T18:45:00.000Z",
+      timeZone: "America/New_York",
+      visibility: "private"
+    });
+    const restored = CalendarStore.fromSnapshot(original.snapshot());
+
+    expect(restored.stateFor("alex").drafts).toEqual([draft]);
+    expect(restored.stateFor("alex").auditEntries[0]).toMatchObject({ action: "drafted", targetId: draft.id });
+  });
 });

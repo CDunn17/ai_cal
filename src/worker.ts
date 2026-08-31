@@ -1,13 +1,13 @@
 import { ZodError } from "zod";
-import { CalendarStore, CalendarStoreError } from "./domain/calendar-store";
-import { demoData } from "./domain/seed";
+import { CalendarStoreError } from "./domain/calendar-store";
+import { D1CalendarRepository } from "./domain/d1-calendar-repository";
 
 interface Env {
   ASSETS: Fetcher;
+  DB: D1Database;
 }
 
 const activeDemoUserId = "alex";
-const calendarStore = new CalendarStore(demoData);
 
 const securityHeaders: Readonly<Record<string, string>> = {
   "Cross-Origin-Opener-Policy": "same-origin",
@@ -64,30 +64,31 @@ async function requestJson(request: Request): Promise<unknown> {
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
+    const calendarStore = new D1CalendarRepository(env.DB);
     if (url.pathname === "/api/health") {
       return apiResponse({ status: "ok", service: "coplan", timestamp: new Date().toISOString() });
     }
 
     try {
       if (request.method === "GET" && url.pathname === "/api/calendar-state") {
-        return apiResponse(calendarStore.stateFor(activeDemoUserId));
+        return apiResponse(await calendarStore.stateFor(activeDemoUserId));
       }
       if (request.method === "POST" && url.pathname === "/api/events") {
-        return apiResponse({ event: calendarStore.create(activeDemoUserId, await requestJson(request)) }, { status: 201 });
+        return apiResponse({ event: await calendarStore.create(activeDemoUserId, await requestJson(request)) }, { status: 201 });
       }
       if (request.method === "POST" && url.pathname === "/api/proposals") {
-        return apiResponse({ proposals: calendarStore.propose(activeDemoUserId, await requestJson(request)) });
+        return apiResponse({ proposals: await calendarStore.propose(activeDemoUserId, await requestJson(request)) });
       }
       if (request.method === "POST" && url.pathname === "/api/event-drafts") {
-        return apiResponse({ draft: calendarStore.createDraft(activeDemoUserId, await requestJson(request)) }, { status: 201 });
+        return apiResponse({ draft: await calendarStore.createDraft(activeDemoUserId, await requestJson(request)) }, { status: 201 });
       }
       const draftMatch = url.pathname.match(/^\/api\/event-drafts\/([^/]+)$/);
       if (request.method === "PATCH" && draftMatch) {
-        return apiResponse({ draft: calendarStore.updateDraft(activeDemoUserId, decodeURIComponent(draftMatch[1]), await requestJson(request)) });
+        return apiResponse({ draft: await calendarStore.updateDraft(activeDemoUserId, decodeURIComponent(draftMatch[1]), await requestJson(request)) });
       }
       const eventMatch = url.pathname.match(/^\/api\/events\/([^/]+)$/);
       if (request.method === "PATCH" && eventMatch) {
-        return apiResponse({ event: calendarStore.update(activeDemoUserId, decodeURIComponent(eventMatch[1]), await requestJson(request)) });
+        return apiResponse({ event: await calendarStore.update(activeDemoUserId, decodeURIComponent(eventMatch[1]), await requestJson(request)) });
       }
       if (request.method === "DELETE" && draftMatch) {
         const body = await requestJson(request);
@@ -95,7 +96,7 @@ export default {
           body && typeof body === "object" && "expectedRevision" in body
             ? body.expectedRevision
             : undefined;
-        calendarStore.discardDraft(activeDemoUserId, decodeURIComponent(draftMatch[1]), expectedRevision);
+        await calendarStore.discardDraft(activeDemoUserId, decodeURIComponent(draftMatch[1]), expectedRevision);
         return apiResponse({ discarded: true });
       }
     } catch (error) {

@@ -2,6 +2,7 @@ import {
   auditEntrySchema,
   calendarEventSchema,
   createEventInputSchema,
+  demoDataSchema,
   eventDraftSchema,
   scheduleRequestSchema,
   updateEventInputSchema,
@@ -26,6 +27,12 @@ export type CalendarState = Readonly<{
   people: DemoData["people"];
   calendars: DemoData["calendars"];
   events: CalendarEvent[];
+  drafts: EventDraft[];
+  auditEntries: AuditEntry[];
+}>;
+
+export type CalendarStoreSnapshot = Readonly<{
+  data: DemoData;
   drafts: EventDraft[];
   auditEntries: AuditEntry[];
 }>;
@@ -61,6 +68,27 @@ export class CalendarStore {
     for (const event of seed.events) {
       this.events.set(event.id, event);
     }
+  }
+
+  static fromSnapshot(snapshot: CalendarStoreSnapshot): CalendarStore {
+    const store = new CalendarStore(demoDataSchema.parse(snapshot.data));
+    for (const draft of snapshot.drafts) {
+      store.drafts.set(draft.id, eventDraftSchema.parse(draft));
+    }
+    store.auditEntries.push(...snapshot.auditEntries.map((entry) => auditEntrySchema.parse(entry)));
+    return store;
+  }
+
+  snapshot(): CalendarStoreSnapshot {
+    return {
+      data: {
+        people: this.people,
+        calendars: this.calendars,
+        events: [...this.events.values()]
+      },
+      drafts: [...this.drafts.values()],
+      auditEntries: this.auditEntries
+    };
   }
 
   stateFor(activeUserId: string): CalendarState {
