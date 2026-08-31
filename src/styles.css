@@ -93,9 +93,14 @@ dd { margin: 0; color: #494351; font-size: .87rem; }
 .event-diff strong { color: #4b4457; font-size: .8rem; }
 .event-diff p, .draft-expiry { margin: 4px 0 0; color: #746d7c; font-size: .74rem; line-height: 1.35; }
 .commit-disabled { grid-column: 1 / -1; padding: 9px 0 0; color: #7f5064; font-size: .73rem; line-height: 1.35; }
+.commit-note { margin: 12px 0 0; color: #746d7c; font-size: .74rem; line-height: 1.4; }
 
 .modal-backdrop { position: fixed; z-index: 4; inset: 0; display: grid; place-items: center; padding: 18px; background: rgba(31, 23, 53, .44); }
 .event-form { position: relative; width: min(540px, 100%); padding: 30px; border-radius: 18px; background: #fff; box-shadow: 0 25px 70px rgba(23, 14, 46, .28); }
+.confirmation-dialog { position: relative; width: min(460px, 100%); padding: 30px; border-radius: 18px; background: #fff; box-shadow: 0 25px 70px rgba(23, 14, 46, .28); }
+.confirmation-dialog > .close-button { position: absolute; top: 15px; right: 15px; }
+.confirmation-dialog h2 { margin: 0 0 8px; font-size: 1.35rem; letter-spacing: -.04em; }
+.confirmation-dialog > p:not(.eyebrow):not(.form-error) { margin: 0; color: #696271; font-size: .88rem; line-height: 1.45; }
 .form-header { position: relative; margin-bottom: 24px; }
 .event-form label { display: grid; gap: 7px; margin-bottom: 16px; color: #5c5665; font-size: .79rem; font-weight: 750; }
 input:not([type="checkbox"]), select { width: 100%; border: 1px solid #dcd7e5; border-radius: 8px; padding: 10px; color: #302b3b; background: #fff; }

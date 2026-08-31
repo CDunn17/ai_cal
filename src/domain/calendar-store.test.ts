@@ -93,4 +93,64 @@ describe("CalendarStore", () => {
     expect(restored.stateFor("alex").drafts).toEqual([draft]);
     expect(restored.stateFor("alex").auditEntries[0]).toMatchObject({ action: "drafted", targetId: draft.id });
   });
+
+  it("commits a draft only after a current human confirmation and makes retries idempotent", () => {
+    const store = new CalendarStore(demoData);
+    const draft = store.createDraft("alex", {
+      calendarId: "alex-main",
+      title: "Approved launch review",
+      startsAt: "2026-09-10T18:00:00.000Z",
+      endsAt: "2026-09-10T18:45:00.000Z",
+      timeZone: "America/New_York",
+      visibility: "public",
+      attendeeIds: ["maya"]
+    });
+    const confirmation = store.prepareDraftCommit("alex", draft.id, draft.revision);
+    const key = "commit-retry-key-0001";
+    const committed = store.commitDraft("alex", draft.id, { expectedRevision: draft.revision, confirmationId: confirmation.id }, key);
+    const retry = store.commitDraft("alex", draft.id, { expectedRevision: draft.revision, confirmationId: confirmation.id }, key);
+
+    expect(committed.status).toBe("confirmed");
+    expect(retry).toEqual(committed);
+    expect(store.stateFor("alex").drafts).toEqual([]);
+    expect(store.stateFor("alex").events.find((event) => event.id === committed.id)).toEqual(committed);
+    expect(store.stateFor("alex").auditEntries[0]).toMatchObject({ action: "committed", targetId: committed.id });
+  });
+
+  it("rejects commits without a current confirmation or after a draft revision changes", () => {
+    const store = new CalendarStore(demoData);
+    const draft = store.createDraft("alex", {
+      calendarId: "alex-main",
+      title: "Needs review",
+      startsAt: "2026-09-10T18:00:00.000Z",
+      endsAt: "2026-09-10T18:45:00.000Z",
+      timeZone: "America/New_York",
+      visibility: "private"
+    });
+    const confirmation = store.prepareDraftCommit("alex", draft.id, draft.revision);
+    const updated = store.updateDraft("alex", draft.id, { expectedRevision: draft.revision, title: "Changed after review" });
+
+    expect(() => store.commitDraft("alex", draft.id, { expectedRevision: draft.revision, confirmationId: confirmation.id }, "stale-confirmation-0001"))
+      .toThrow(new CalendarStoreError(409, "This draft changed. Refresh and review it before committing."));
+    expect(() => store.commitDraft("alex", updated.id, { expectedRevision: updated.revision, confirmationId: crypto.randomUUID() }, "missing-confirmation-01"))
+      .toThrow(new CalendarStoreError(409, "This confirmation is no longer valid. Review the draft again before committing."));
+  });
+
+  it("rate-limits repeated invalid commit attempts", () => {
+    const store = new CalendarStore(demoData);
+    const draft = store.createDraft("alex", {
+      calendarId: "alex-main",
+      title: "Rate limited review",
+      startsAt: "2026-09-10T18:00:00.000Z",
+      endsAt: "2026-09-10T18:45:00.000Z",
+      timeZone: "America/New_York",
+      visibility: "private"
+    });
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      expect(() => store.commitDraft("alex", draft.id, { expectedRevision: draft.revision, confirmationId: crypto.randomUUID() }, `invalid-attempt-key-${attempt}`))
+        .toThrow(new CalendarStoreError(409, "This confirmation is no longer valid. Review the draft again before committing."));
+    }
+    expect(() => store.commitDraft("alex", draft.id, { expectedRevision: draft.revision, confirmationId: crypto.randomUUID() }, "invalid-attempt-key-4"))
+      .toThrow(new CalendarStoreError(409, "Too many commit attempts. Wait one minute and review the draft again."));
+  });
 });

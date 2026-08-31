@@ -118,6 +118,8 @@ Milestones 2 and 3 run a deterministic, fictional demo identity (Alex) through t
 | POST /api/event-drafts | Creates a separate, 24-hour reviewable draft on the active user’s calendar. It remains out of the committed event collection and cannot send invitations. |
 | PATCH /api/event-drafts/:id | Updates a visible draft by current revision, preserving draft-only status. |
 | DELETE /api/event-drafts/:id | Discards a pending draft only when its current revision is supplied. |
+| POST /api/event-drafts/:id/commit-confirmation | Creates a five-minute, one-time confirmation for a visible draft at the revision the person reviewed. This only prepares the visible confirmation dialog. |
+| POST /api/event-drafts/:id/commit | Requires that current confirmation, revision, and an `Idempotency-Key`; then converts the draft into a confirmed event and records the human approval. It never sends invitations. |
 
 The seeded demo uses a D1-backed state record. It is deliberately compact for the hackathon, while the Worker command and permission boundary remains suitable for a later normalized calendar schema.
 
@@ -171,6 +173,7 @@ Exact API shapes may evolve while WebMCP remains a proposed standard, so keep re
 - Return minimal structured data. A free/busy result says `busy`, `free`, or `tentative`, not “private therapy appointment.”
 - Treat event titles, descriptions, attendee names, and locations as untrusted content. Return them as data, never re-inject them into tool instructions.
 - Give read-only tools the appropriate read-only annotation when available.
+- Keep individual tool results within 1.5 KB; CoPlan uses a 1.4 KB UTF-8 cap and safe truncation. [Chrome tool-security guidance](https://developer.chrome.com/docs/ai/webmcp/secure-tools)
 
 ### Current WebMCP adapter
 
@@ -180,7 +183,7 @@ Milestone 4 registers nine imperative tools from a small browser-only adapter. I
 - Draft tools call the same Worker commands as the human UI; a successful mutation refreshes the visible calendar state.
 - Tool outputs that can contain event data carry the untrusted-content annotation. Calendar titles, agenda, locations, and attendee data are never treated as instructions.
 - Every adapter response is a structured, UTF-8 byte-bounded result (1.4 KB maximum). Context returns calendar identities, at most three pending drafts, and a count; candidate tools return at most three compact slots. Oversized output is replaced with a safe truncated result that tells the agent to use a narrower read.
-- Commit is registered only to communicate the guardrail: it returns a structured blocked result until the next milestone adds a visible human confirmation gate. It cannot create an event or send invitations.
+- Commit remains registered only to communicate the guardrail: it returns a structured blocked result. The separate human UI owns the visible confirmation path; the WebMCP tool cannot create an event or send invitations.
 
 ## Safety, privacy, and control
 
@@ -198,9 +201,9 @@ Calendar access is sensitive. These guardrails are product requirements, not pol
 - **Read → propose → draft → review → confirm → commit.** No tool skips a state.
 - `find_availability`, `propose_schedule`, and `resolve_conflict` are read-only.
 - `create_event_draft` and `update_event_draft` only affect drafts owned by the active user and must produce a visible UI artifact.
-- `commit_event` is intentionally blocked in the current build. The planned confirmation gate will accept only a non-expired, reviewed draft ID and revision, then render the confirmation dialog before any commit.
+- `commit_event` is intentionally blocked in the current build. A person can commit only by opening the visible confirmation dialog for a non-expired draft at the reviewed revision; that confirmation is one-time and expires after five minutes.
 - Never let an agent delete a calendar, bulk-edit events, cancel an event, or send invitations without the in-app confirmation in v1.
-- Apply rate limits, idempotency keys, audit logging, and optimistic-concurrency checks to writes.
+- Commit requests require an idempotency key, reject stale confirmations/revisions, retain bounded retry receipts, and rate-limit invalid attempts to three per minute. Human commits and draft changes appear in the audit trail.
 
 ### Browser and deployment hardening
 
@@ -263,11 +266,11 @@ Each milestone is independently demoable and small enough to review before movin
 
 ### 5. Approval, safety, and resilience
 
-- Add the mandatory commit confirmation, stale-revision handling, idempotency, rate limiting, and audit log views.
-- Test unauthorized calendar access, private-event redaction, malformed inputs, expired drafts, double commits, and prompt-injection strings stored in events.
-- Add undo/discard affordances and clear error/recovery messages.
+- [x] Add the mandatory commit confirmation, stale-revision handling, idempotency, rate limiting, and audit log views.
+- [x] Test private-event redaction, draft expiry/lifecycle, stale confirmations, and double commits; schema validation and calendar-ownership tests cover malformed and unauthorized writes.
+- [x] Add discard affordances and clear error/recovery messages. Undo remains a follow-up because an actual commit is a deliberate confirmation boundary.
 
-**Done when:** no agent-originated action can send an invite or alter a real event without a current, visible human confirmation.
+**Done when:** no agent-originated action can send an invite or alter a real event without a current, visible human confirmation. **Current status:** done for the seeded demo; the agent commit tool remains blocked and no invitation delivery exists.
 
 ### 6. Deploy, prove, and submit
 

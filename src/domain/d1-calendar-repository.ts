@@ -34,6 +34,14 @@ export class D1CalendarRepository {
     return this.withStore((store) => store.discardDraft(activeUserId, draftId, expectedRevision));
   }
 
+  async prepareDraftCommit(activeUserId: string, draftId: string, expectedRevision: unknown) {
+    return this.withStore((store) => store.prepareDraftCommit(activeUserId, draftId, expectedRevision));
+  }
+
+  async commitDraft(activeUserId: string, draftId: string, input: unknown, idempotencyKey: string) {
+    return this.withStore((store) => store.commitDraft(activeUserId, draftId, input, idempotencyKey));
+  }
+
   private async withStore<T>(operation: (store: CalendarStore) => T): Promise<T> {
     for (let attempt = 0; attempt < 3; attempt += 1) {
       const stored = await this.database

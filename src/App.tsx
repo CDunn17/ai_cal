@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type CSSProperties, type FormEvent } from "react";
-import type { CalendarEvent, EventDraft, ScheduleCandidate } from "./domain/contracts";
+import type { CalendarEvent, DraftCommitConfirmation, EventDraft, ScheduleCandidate } from "./domain/contracts";
 import type { CalendarState } from "./domain/calendar-store";
 import { ACTIVITY_EVENT, registerCalendarTools, STATE_CHANGED_EVENT, type ToolActivity } from "./webmcp/calendar-tools";
 
@@ -128,6 +128,9 @@ export function App() {
   const [proposalError, setProposalError] = useState<string | null>(null);
   const [isFindingTime, setIsFindingTime] = useState(false);
   const [selectedDraftId, setSelectedDraftId] = useState<string | null>(null);
+  const [commitConfirmation, setCommitConfirmation] = useState<DraftCommitConfirmation | null>(null);
+  const [commitError, setCommitError] = useState<string | null>(null);
+  const [isCommitting, setIsCommitting] = useState(false);
   const [toolActivities, setToolActivities] = useState<ToolActivity[]>([]);
 
   const refresh = async () => {
@@ -239,9 +242,43 @@ export function App() {
         body: JSON.stringify({ expectedRevision: draft.revision })
       });
       setSelectedDraftId(null);
+      setCommitConfirmation(null);
       await refresh();
     } catch (error) {
       setLoadError(error instanceof Error ? error.message : "The draft could not be discarded.");
+    }
+  };
+
+  const prepareDraftCommit = async (draft: EventDraft) => {
+    setCommitError(null);
+    try {
+      const response = await request<{ confirmation: DraftCommitConfirmation }>("/api/event-drafts/" + draft.id + "/commit-confirmation", {
+        method: "POST",
+        body: JSON.stringify({ expectedRevision: draft.revision })
+      });
+      setCommitConfirmation(response.confirmation);
+    } catch (error) {
+      setCommitError(error instanceof Error ? error.message : "The draft could not be prepared for review.");
+    }
+  };
+
+  const commitDraft = async () => {
+    if (!selectedDraft || !commitConfirmation) return;
+    setIsCommitting(true);
+    setCommitError(null);
+    try {
+      await request("/api/event-drafts/" + selectedDraft.id + "/commit", {
+        method: "POST",
+        headers: { "Idempotency-Key": crypto.randomUUID() },
+        body: JSON.stringify({ expectedRevision: selectedDraft.revision, confirmationId: commitConfirmation.id })
+      });
+      setCommitConfirmation(null);
+      setSelectedDraftId(null);
+      await refresh();
+    } catch (error) {
+      setCommitError(error instanceof Error ? error.message : "The event could not be committed.");
+    } finally {
+      setIsCommitting(false);
     }
   };
 
@@ -422,7 +459,8 @@ export function App() {
             <div><span>After approval</span><strong>{selectedDraft.event.title}</strong><p>{selectedDraft.event.attendeeIds.map((id) => state.people.find((person) => person.id === id)?.displayName).filter(Boolean).join(", ")}</p></div>
           </div>
           <p className="draft-expiry">Draft expires {new Intl.DateTimeFormat("en-US", { timeZone: DISPLAY_TIME_ZONE, month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }).format(new Date(selectedDraft.expiresAt))}.</p>
-          <div className="detail-actions"><button type="button" onClick={() => void discardDraft(selectedDraft)}>Discard draft</button><span className="commit-disabled">Invitation sending is disabled until a later confirmation milestone.</span></div>
+          <div className="detail-actions"><button type="button" onClick={() => void discardDraft(selectedDraft)}>Discard draft</button><button type="button" className="primary-button" onClick={() => void prepareDraftCommit(selectedDraft)}>Review &amp; confirm</button></div>
+          <p className="commit-note">Only a visible, current review can add this event. The WebMCP commit tool remains blocked.</p>
         </aside>
       )}
 
@@ -465,6 +503,25 @@ export function App() {
             {formError && <p className="form-error" role="alert">{formError}</p>}
             <div className="form-actions"><button type="button" onClick={() => setForm(null)}>Cancel</button><button className="primary-button" disabled={isSaving} type="submit">{isSaving ? "Saving…" : form.id ? "Save changes" : "Create event"}</button></div>
           </form>
+        </div>
+      )}
+
+      {commitConfirmation && selectedDraft && (
+        <div className="modal-backdrop" role="presentation">
+          <section className="confirmation-dialog" role="dialog" aria-modal="true" aria-labelledby="confirmation-title">
+            <button type="button" className="close-button" aria-label="Close confirmation" disabled={isCommitting} onClick={() => setCommitConfirmation(null)}>×</button>
+            <p className="eyebrow">Human approval required</p>
+            <h2 id="confirmation-title">Add this event to your calendar?</h2>
+            <p>This will create the confirmed event below. CoPlan does not send invitations in this demo.</p>
+            <dl>
+              <div><dt>Event</dt><dd>{selectedDraft.event.title}</dd></div>
+              <div><dt>Time</dt><dd>{timeLabel(selectedDraft.event.startsAt)}–{timeLabel(selectedDraft.event.endsAt)} · {DISPLAY_TIME_ZONE.replace("_", " ")}</dd></div>
+              <div><dt>Invitees</dt><dd>{selectedDraft.event.attendeeIds.map((id) => state.people.find((person) => person.id === id)?.displayName).filter(Boolean).join(", ")}</dd></div>
+              <div><dt>Review</dt><dd>Draft revision {selectedDraft.revision}; confirmation expires in five minutes.</dd></div>
+            </dl>
+            {commitError && <p className="form-error" role="alert">{commitError}</p>}
+            <div className="form-actions"><button type="button" disabled={isCommitting} onClick={() => setCommitConfirmation(null)}>Keep reviewing</button><button type="button" className="primary-button" disabled={isCommitting} onClick={() => void commitDraft()}>{isCommitting ? "Adding…" : "Confirm & add event"}</button></div>
+          </section>
         </div>
       )}
     </main>

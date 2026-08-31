@@ -102,11 +102,31 @@ export const eventDraftSchema = z.object({
   status: z.literal("pending")
 });
 
+export const draftCommitConfirmationSchema = z.object({
+  id: z.string().min(1),
+  draftId: z.string().min(1),
+  ownerId: z.string().min(1),
+  draftRevision: z.number().int().positive(),
+  expiresAt: z.string().datetime({ offset: true })
+});
+
+export const commitDraftInputSchema = z.object({
+  expectedRevision: z.number().int().positive(),
+  confirmationId: z.string().uuid()
+});
+
+export const commitReceiptSchema = z.object({
+  key: z.string().min(16).max(128),
+  ownerId: z.string().min(1),
+  draftId: z.string().min(1),
+  event: calendarEventSchema
+});
+
 export const auditEntrySchema = z.object({
   id: z.string().min(1),
   actor: z.literal("human"),
   actorId: z.string().min(1),
-  action: z.enum(["created", "updated", "moved", "drafted", "discarded"]),
+  action: z.enum(["created", "updated", "moved", "drafted", "discarded", "committed"]),
   targetId: z.string().min(1),
   summary: z.string().min(1).max(240),
   createdAt: z.string().datetime({ offset: true })
@@ -130,3 +150,5 @@ export type AuditEntry = z.infer<typeof auditEntrySchema>;
 export type ScheduleRequest = z.infer<typeof scheduleRequestSchema>;
 export type ScheduleCandidate = z.infer<typeof scheduleCandidateSchema>;
 export type EventDraft = z.infer<typeof eventDraftSchema>;
+export type DraftCommitConfirmation = z.infer<typeof draftCommitConfirmationSchema>;
+export type CommitReceipt = z.infer<typeof commitReceiptSchema>;

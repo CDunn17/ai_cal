@@ -61,6 +61,12 @@ async function requestJson(request: Request): Promise<unknown> {
   }
 }
 
+function idempotencyKey(request: Request): string {
+  const key = request.headers.get("Idempotency-Key");
+  if (!key) throw new CalendarStoreError(400, "An Idempotency-Key header is required to commit a draft.");
+  return key;
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
@@ -85,6 +91,19 @@ export default {
       const draftMatch = url.pathname.match(/^\/api\/event-drafts\/([^/]+)$/);
       if (request.method === "PATCH" && draftMatch) {
         return apiResponse({ draft: await calendarStore.updateDraft(activeDemoUserId, decodeURIComponent(draftMatch[1]), await requestJson(request)) });
+      }
+      const commitConfirmationMatch = url.pathname.match(/^\/api\/event-drafts\/([^/]+)\/commit-confirmation$/);
+      if (request.method === "POST" && commitConfirmationMatch) {
+        const body = await requestJson(request);
+        const expectedRevision = body && typeof body === "object" && "expectedRevision" in body ? body.expectedRevision : undefined;
+        return apiResponse({ confirmation: await calendarStore.prepareDraftCommit(activeDemoUserId, decodeURIComponent(commitConfirmationMatch[1]), expectedRevision) });
+      }
+      const commitMatch = url.pathname.match(/^\/api\/event-drafts\/([^/]+)\/commit$/);
+      if (request.method === "POST" && commitMatch) {
+        return apiResponse(
+          { event: await calendarStore.commitDraft(activeDemoUserId, decodeURIComponent(commitMatch[1]), await requestJson(request), idempotencyKey(request)) },
+          { status: 201 }
+        );
       }
       const eventMatch = url.pathname.match(/^\/api\/events\/([^/]+)$/);
       if (request.method === "PATCH" && eventMatch) {
