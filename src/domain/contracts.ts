@@ -38,25 +38,49 @@ export const calendarSchema = z.object({
 export const eventVisibilitySchema = z.enum(["public", "private"]);
 export const eventStatusSchema = z.enum(["confirmed", "tentative", "draft"]);
 
-export const calendarEventSchema = z
-  .object({
+const eventFieldsSchema = z.object({
+  calendarId: z.string().min(1),
+  title: z.string().min(1).max(140),
+  startsAt: z.string().datetime({ offset: true }),
+  endsAt: z.string().datetime({ offset: true }),
+  timeZone: timeZoneSchema,
+  visibility: eventVisibilitySchema,
+  status: eventStatusSchema,
+  attendeeIds: z.array(z.string().min(1)).max(20),
+  location: z.string().max(160).optional(),
+  agenda: z.string().max(2_000).optional()
+});
+
+export const calendarEventSchema = eventFieldsSchema
+  .extend({
     id: z.string().min(1),
-    calendarId: z.string().min(1),
-    revision: z.number().int().positive(),
-    title: z.string().min(1).max(140),
-    startsAt: z.string().datetime({ offset: true }),
-    endsAt: z.string().datetime({ offset: true }),
-    timeZone: timeZoneSchema,
-    visibility: eventVisibilitySchema,
-    status: eventStatusSchema,
-    attendeeIds: z.array(z.string().min(1)).max(20),
-    location: z.string().max(160).optional(),
-    agenda: z.string().max(2_000).optional()
+    revision: z.number().int().positive()
   })
   .refine((event) => Date.parse(event.endsAt) > Date.parse(event.startsAt), {
     message: "An event must end after it starts.",
     path: ["endsAt"]
   });
+
+export const createEventInputSchema = eventFieldsSchema
+  .omit({ status: true, attendeeIds: true })
+  .extend({ attendeeIds: z.array(z.string().min(1)).max(20).optional() });
+
+export const updateEventInputSchema = eventFieldsSchema
+  .partial()
+  .extend({ expectedRevision: z.number().int().positive() })
+  .refine((input) => Object.keys(input).some((key) => key !== "expectedRevision"), {
+    message: "Provide at least one field to update."
+  });
+
+export const auditEntrySchema = z.object({
+  id: z.string().min(1),
+  actor: z.literal("human"),
+  actorId: z.string().min(1),
+  action: z.enum(["created", "updated", "moved"]),
+  targetId: z.string().min(1),
+  summary: z.string().min(1).max(240),
+  createdAt: z.string().datetime({ offset: true })
+});
 
 export const demoDataSchema = z.object({
   people: z.array(personSchema).min(1),
@@ -70,3 +94,6 @@ export type CalendarEvent = z.infer<typeof calendarEventSchema>;
 export type EventVisibility = z.infer<typeof eventVisibilitySchema>;
 export type EventStatus = z.infer<typeof eventStatusSchema>;
 export type DemoData = z.infer<typeof demoDataSchema>;
+export type CreateEventInput = z.infer<typeof createEventInputSchema>;
+export type UpdateEventInput = z.infer<typeof updateEventInputSchema>;
+export type AuditEntry = z.infer<typeof auditEntrySchema>;

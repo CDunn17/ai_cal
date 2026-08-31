@@ -105,6 +105,18 @@ npm test
 npm run build
 ```
 
+### Current human calendar API
+
+Milestone 2 runs a deterministic, fictional demo identity (Alex) through the Worker. This is intentionally not an authentication design; a real sign-in/session boundary replaces it before provider integrations are introduced.
+
+| Endpoint | Behavior and guardrails |
+| --- | --- |
+| GET /api/calendar-state | Returns the active user’s team, calendar list, readable events, and their human audit entries. Private events not owned by or shared with the user are projected as a generic Busy block. |
+| POST /api/events | Creates a confirmed event only on the active user’s calendar. The server validates timestamps, timezone, visibility, and attendee IDs, injects the active user as an attendee, and records an audit entry. |
+| PATCH /api/events/:id | Edits or moves an event only on the active user’s calendar. Every request includes the reviewed revision; stale writes are rejected with 409 Conflict. |
+
+The Worker store is intentionally in-memory for the seeded demo, so its state resets when a local Worker restarts. D1 persistence is the next infrastructure addition; the command and permission boundary will remain unchanged.
+
 ### Core model
 
 Keep the first schema intentionally boring:
