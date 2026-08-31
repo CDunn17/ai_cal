@@ -72,11 +72,41 @@ export const updateEventInputSchema = eventFieldsSchema
     message: "Provide at least one field to update."
   });
 
+export const scheduleRequestSchema = z
+  .object({
+    attendeeIds: z.array(z.string().min(1)).min(1).max(10),
+    durationMinutes: z.number().int().min(15).max(120).multipleOf(15),
+    rangeStartsAt: z.string().datetime({ offset: true }),
+    rangeEndsAt: z.string().datetime({ offset: true })
+  })
+  .refine((request) => Date.parse(request.rangeEndsAt) > Date.parse(request.rangeStartsAt), {
+    message: "The search range must end after it starts.",
+    path: ["rangeEndsAt"]
+  });
+
+export const scheduleCandidateSchema = z.object({
+  startsAt: z.string().datetime({ offset: true }),
+  endsAt: z.string().datetime({ offset: true }),
+  score: z.number().int(),
+  reasons: z.array(z.string().min(1)).min(1).max(10),
+  warnings: z.array(z.string().min(1)).max(10)
+});
+
+export const eventDraftSchema = z.object({
+  id: z.string().min(1),
+  ownerId: z.string().min(1),
+  revision: z.number().int().positive(),
+  event: calendarEventSchema,
+  createdAt: z.string().datetime({ offset: true }),
+  expiresAt: z.string().datetime({ offset: true }),
+  status: z.literal("pending")
+});
+
 export const auditEntrySchema = z.object({
   id: z.string().min(1),
   actor: z.literal("human"),
   actorId: z.string().min(1),
-  action: z.enum(["created", "updated", "moved"]),
+  action: z.enum(["created", "updated", "moved", "drafted", "discarded"]),
   targetId: z.string().min(1),
   summary: z.string().min(1).max(240),
   createdAt: z.string().datetime({ offset: true })
@@ -97,3 +127,6 @@ export type DemoData = z.infer<typeof demoDataSchema>;
 export type CreateEventInput = z.infer<typeof createEventInputSchema>;
 export type UpdateEventInput = z.infer<typeof updateEventInputSchema>;
 export type AuditEntry = z.infer<typeof auditEntrySchema>;
+export type ScheduleRequest = z.infer<typeof scheduleRequestSchema>;
+export type ScheduleCandidate = z.infer<typeof scheduleCandidateSchema>;
+export type EventDraft = z.infer<typeof eventDraftSchema>;

@@ -49,4 +49,25 @@ describe("CalendarStore", () => {
       })
     ).toThrow(new CalendarStoreError(403, "You can only change events on your own calendar."));
   });
+
+  it("keeps proposed events as reviewable drafts until a later commit step", () => {
+    const store = new CalendarStore(demoData);
+    const draft = store.createDraft("alex", {
+      calendarId: "alex-main",
+      title: "Launch review",
+      startsAt: "2026-09-10T18:00:00.000Z",
+      endsAt: "2026-09-10T18:45:00.000Z",
+      timeZone: "America/New_York",
+      visibility: "public",
+      attendeeIds: ["maya", "sam"]
+    });
+
+    expect(draft.event.status).toBe("draft");
+    expect(store.stateFor("alex").events).toHaveLength(demoData.events.length);
+    expect(store.stateFor("alex").drafts).toEqual([draft]);
+
+    store.discardDraft("alex", draft.id, draft.revision);
+    expect(store.stateFor("alex").drafts).toEqual([]);
+    expect(store.stateFor("alex").auditEntries[0].action).toBe("discarded");
+  });
 });

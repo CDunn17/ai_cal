@@ -2,11 +2,15 @@ import {
   auditEntrySchema,
   calendarEventSchema,
   createEventInputSchema,
+  eventDraftSchema,
+  scheduleRequestSchema,
   updateEventInputSchema,
   type AuditEntry,
   type CalendarEvent,
-  type DemoData
+  type DemoData,
+  type EventDraft
 } from "./contracts";
+import { proposeSchedule } from "./scheduling";
 
 export class CalendarStoreError extends Error {
   constructor(
@@ -22,6 +26,7 @@ export type CalendarState = Readonly<{
   people: DemoData["people"];
   calendars: DemoData["calendars"];
   events: CalendarEvent[];
+  drafts: EventDraft[];
   auditEntries: AuditEntry[];
 }>;
 
@@ -47,6 +52,7 @@ export class CalendarStore {
   private readonly people;
   private readonly calendars;
   private readonly events = new Map<string, CalendarEvent>();
+  private readonly drafts = new Map<string, EventDraft>();
   private readonly auditEntries: AuditEntry[] = [];
 
   constructor(seed: DemoData) {
@@ -59,6 +65,7 @@ export class CalendarStore {
 
   stateFor(activeUserId: string): CalendarState {
     this.assertUser(activeUserId);
+    this.removeExpiredDrafts();
     return {
       activeUserId,
       people: this.people,
@@ -67,28 +74,65 @@ export class CalendarStore {
         const calendar = this.getCalendar(event.calendarId);
         return projectEvent(event, activeUserId, calendar.ownerId);
       }),
+      drafts: this.draftsFor(activeUserId),
       auditEntries: this.auditEntries.filter((entry) => entry.actorId === activeUserId)
     };
   }
 
+  propose(activeUserId: string, input: unknown) {
+    this.assertUser(activeUserId);
+    const request = scheduleRequestSchema.parse(input);
+    this.assertKnownAttendees(request.attendeeIds);
+    try {
+      return proposeSchedule([...this.events.values()], this.people, activeUserId, request);
+    } catch (error) {
+      throw new CalendarStoreError(400, error instanceof Error ? error.message : "Could not produce scheduling options.");
+    }
+  }
+
   create(activeUserId: string, input: unknown): CalendarEvent {
     this.assertUser(activeUserId);
-    const parsed = createEventInputSchema.parse(input);
-    const calendar = this.getCalendar(parsed.calendarId);
-    this.assertCalendarOwner(calendar.id, activeUserId);
-    this.assertKnownAttendees(parsed.attendeeIds ?? []);
-
-    const event = calendarEventSchema.parse({
-      ...parsed,
-      id: crypto.randomUUID(),
-      revision: 1,
-      attendeeIds: [...new Set([activeUserId, ...(parsed.attendeeIds ?? [])])],
-      status: "confirmed"
-    });
+    const event = this.createOwnedEvent(activeUserId, input, "confirmed");
 
     this.events.set(event.id, event);
     this.record("created", event, activeUserId);
     return event;
+  }
+
+  createDraft(activeUserId: string, input: unknown) {
+    this.assertUser(activeUserId);
+    this.removeExpiredDrafts();
+    const event = this.createOwnedEvent(activeUserId, input, "draft");
+    const createdAt = new Date().toISOString();
+    const draft = eventDraftSchema.parse({
+      id: crypto.randomUUID(),
+      ownerId: activeUserId,
+      revision: 1,
+      event,
+      createdAt,
+      expiresAt: new Date(Date.parse(createdAt) + 24 * 60 * 60_000).toISOString(),
+      status: "pending"
+    });
+    this.drafts.set(draft.id, draft);
+    this.recordDraft("drafted", draft.id, activeUserId, "Created a reviewable draft for “" + event.title + "”.");
+    return draft;
+  }
+
+  discardDraft(activeUserId: string, draftId: string, expectedRevision: unknown): void {
+    this.assertUser(activeUserId);
+    this.removeExpiredDrafts();
+    const draft = this.drafts.get(draftId);
+    if (!draft) {
+      throw new CalendarStoreError(404, "Draft not found or already expired.");
+    }
+    if (draft.ownerId !== activeUserId) {
+      throw new CalendarStoreError(403, "You can only discard your own drafts.");
+    }
+    if (typeof expectedRevision !== "number" || !Number.isInteger(expectedRevision) || expectedRevision !== draft.revision) {
+      throw new CalendarStoreError(409, "This draft changed. Refresh and review it before discarding.");
+    }
+    this.drafts.delete(draftId);
+    this.recordDraft("discarded", draftId, activeUserId, "Discarded the draft for “" + draft.event.title + "”.");
   }
 
   update(activeUserId: string, eventId: string, input: unknown): CalendarEvent {
@@ -125,6 +169,20 @@ export class CalendarStore {
     return before.startsAt !== after.startsAt || before.endsAt !== after.endsAt;
   }
 
+  private createOwnedEvent(activeUserId: string, input: unknown, status: "confirmed" | "draft"): CalendarEvent {
+    const parsed = createEventInputSchema.parse(input);
+    const calendar = this.getCalendar(parsed.calendarId);
+    this.assertCalendarOwner(calendar.id, activeUserId);
+    this.assertKnownAttendees(parsed.attendeeIds ?? []);
+    return calendarEventSchema.parse({
+      ...parsed,
+      id: crypto.randomUUID(),
+      revision: 1,
+      attendeeIds: [...new Set([activeUserId, ...(parsed.attendeeIds ?? [])])],
+      status
+    });
+  }
+
   private record(action: AuditEntry["action"], event: CalendarEvent, activeUserId: string): void {
     const actionVerb = action === "created" ? "Created" : action === "moved" ? "Moved" : "Updated";
     this.auditEntries.unshift(
@@ -138,6 +196,33 @@ export class CalendarStore {
         createdAt: new Date().toISOString()
       })
     );
+  }
+
+  private recordDraft(action: AuditEntry["action"], targetId: string, activeUserId: string, summary: string): void {
+    this.auditEntries.unshift(
+      auditEntrySchema.parse({
+        id: crypto.randomUUID(),
+        actor: "human",
+        actorId: activeUserId,
+        action,
+        targetId,
+        summary,
+        createdAt: new Date().toISOString()
+      })
+    );
+  }
+
+  private draftsFor(activeUserId: string) {
+    return [...this.drafts.values()].filter((draft) => draft.ownerId === activeUserId);
+  }
+
+  private removeExpiredDrafts(): void {
+    const now = Date.now();
+    for (const [id, draft] of this.drafts) {
+      if (Date.parse(draft.expiresAt) <= now) {
+        this.drafts.delete(id);
+      }
+    }
   }
 
   private assertUser(activeUserId: string): void {

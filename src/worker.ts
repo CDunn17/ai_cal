@@ -75,9 +75,25 @@ export default {
       if (request.method === "POST" && url.pathname === "/api/events") {
         return apiResponse({ event: calendarStore.create(activeDemoUserId, await requestJson(request)) }, { status: 201 });
       }
+      if (request.method === "POST" && url.pathname === "/api/proposals") {
+        return apiResponse({ proposals: calendarStore.propose(activeDemoUserId, await requestJson(request)) });
+      }
+      if (request.method === "POST" && url.pathname === "/api/event-drafts") {
+        return apiResponse({ draft: calendarStore.createDraft(activeDemoUserId, await requestJson(request)) }, { status: 201 });
+      }
       const eventMatch = url.pathname.match(/^\/api\/events\/([^/]+)$/);
       if (request.method === "PATCH" && eventMatch) {
         return apiResponse({ event: calendarStore.update(activeDemoUserId, decodeURIComponent(eventMatch[1]), await requestJson(request)) });
+      }
+      const draftMatch = url.pathname.match(/^\/api\/event-drafts\/([^/]+)$/);
+      if (request.method === "DELETE" && draftMatch) {
+        const body = await requestJson(request);
+        const expectedRevision =
+          body && typeof body === "object" && "expectedRevision" in body
+            ? body.expectedRevision
+            : undefined;
+        calendarStore.discardDraft(activeDemoUserId, decodeURIComponent(draftMatch[1]), expectedRevision);
+        return apiResponse({ discarded: true });
       }
     } catch (error) {
       return errorResponse(error);

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type CSSProperties, type FormEvent } from "react";
-import type { CalendarEvent } from "./domain/contracts";
+import type { CalendarEvent, EventDraft, ScheduleCandidate } from "./domain/contracts";
 import type { CalendarState } from "./domain/calendar-store";
 
 const DISPLAY_TIME_ZONE = "America/New_York";
@@ -123,6 +123,10 @@ export function App() {
   const [form, setForm] = useState<EventForm | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [proposals, setProposals] = useState<ScheduleCandidate[] | null>(null);
+  const [proposalError, setProposalError] = useState<string | null>(null);
+  const [isFindingTime, setIsFindingTime] = useState(false);
+  const [selectedDraftId, setSelectedDraftId] = useState<string | null>(null);
 
   const refresh = async () => {
     try {
@@ -157,7 +161,66 @@ export function App() {
     [selectedEventId, state]
   );
   const activeCalendar = state?.calendars.find((calendar) => calendar.ownerId === state.activeUserId);
+  const selectedDraft = state?.drafts.find((draft) => draft.id === selectedDraftId) ?? null;
   const calendarColors = new Map(state?.calendars.map((calendar) => [calendar.id, calendar.color]));
+
+  const findTime = async () => {
+    setIsFindingTime(true);
+    setProposalError(null);
+    try {
+      const response = await request<{ proposals: ScheduleCandidate[] }>("/api/proposals", {
+        method: "POST",
+        body: JSON.stringify({
+          attendeeIds: ["maya", "sam"],
+          durationMinutes: 45,
+          rangeStartsAt: "2026-09-07T12:00:00.000Z",
+          rangeEndsAt: "2026-09-12T00:00:00.000Z"
+        })
+      });
+      setProposals(response.proposals);
+    } catch (error) {
+      setProposalError(error instanceof Error ? error.message : "Could not find scheduling options.");
+    } finally {
+      setIsFindingTime(false);
+    }
+  };
+
+  const createDraftFromProposal = async (proposal: ScheduleCandidate) => {
+    if (!activeCalendar) return;
+    setProposalError(null);
+    try {
+      const response = await request<{ draft: EventDraft }>("/api/event-drafts", {
+        method: "POST",
+        body: JSON.stringify({
+          calendarId: activeCalendar.id,
+          title: "Launch review",
+          startsAt: proposal.startsAt,
+          endsAt: proposal.endsAt,
+          timeZone: DISPLAY_TIME_ZONE,
+          visibility: "public",
+          attendeeIds: ["maya", "sam"],
+          agenda: "Review launch readiness, risks, and owners."
+        })
+      });
+      setSelectedDraftId(response.draft.id);
+      await refresh();
+    } catch (error) {
+      setProposalError(error instanceof Error ? error.message : "Could not create the draft.");
+    }
+  };
+
+  const discardDraft = async (draft: EventDraft) => {
+    try {
+      await request("/api/event-drafts/" + draft.id, {
+        method: "DELETE",
+        body: JSON.stringify({ expectedRevision: draft.revision })
+      });
+      setSelectedDraftId(null);
+      await refresh();
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : "The draft could not be discarded.");
+    }
+  };
 
   const saveForm = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -231,10 +294,19 @@ export function App() {
       <header className="calendar-header">
         <div className="brand"><span className="brand-mark">C</span><strong>CoPlan</strong></div>
         <div className="week-controls"><button type="button" className="icon-button" aria-label="Previous week">‹</button><strong>September 2026</strong><button type="button" className="icon-button" aria-label="Next week">›</button></div>
-        <div className="header-actions"><span className="timezone-label">{DISPLAY_TIME_ZONE.replace("_", " ")}</span><button type="button" className="primary-button" onClick={() => setForm(toEventForm())}>New event</button></div>
+        <div className="header-actions"><span className="timezone-label">{DISPLAY_TIME_ZONE.replace("_", " ")}</span><button type="button" className="secondary-button" disabled={isFindingTime} onClick={() => void findTime()}>{isFindingTime ? "Finding…" : "Find time"}</button><button type="button" className="primary-button" onClick={() => setForm(toEventForm())}>New event</button></div>
       </header>
 
       {loadError && <p className="error-banner" role="alert">{loadError}</p>}
+
+      {(proposals || proposalError) && (
+        <section className="proposal-panel" aria-labelledby="proposal-title">
+          <div className="proposal-heading"><div><p className="eyebrow">Scheduling assistant</p><h2 id="proposal-title">Launch review · 45 minutes</h2><p>Options use working hours, protected focus time, busy blocks, and travel buffers.</p></div><button type="button" className="close-button" aria-label="Close scheduling options" onClick={() => { setProposals(null); setProposalError(null); }}>×</button></div>
+          {proposalError && <p className="form-error" role="alert">{proposalError}</p>}
+          {proposals?.length === 0 && <p className="muted">No slot met the current constraints. Adjust the time range or attendees.</p>}
+          {proposals && proposals.length > 0 && <div className="proposal-grid">{proposals.map((proposal) => <article className="proposal-card" key={proposal.startsAt}><div><p className="proposal-time">{timeLabel(proposal.startsAt)}–{timeLabel(proposal.endsAt)}</p><strong>{new Intl.DateTimeFormat("en-US", { timeZone: DISPLAY_TIME_ZONE, weekday: "long", month: "short", day: "numeric" }).format(new Date(proposal.startsAt))}</strong></div><p className="proposal-score">Score {proposal.score}</p><ul>{proposal.reasons.slice(0, 2).map((reason) => <li key={reason}>{reason}</li>)}</ul>{proposal.warnings.length > 0 && <p className="proposal-warning">{proposal.warnings[0]}</p>}<button type="button" className="secondary-button" onClick={() => void createDraftFromProposal(proposal)}>Create draft</button></article>)}</div>}
+        </section>
+      )}
 
       <div className="calendar-layout">
         <aside className="sidebar">
@@ -253,6 +325,12 @@ export function App() {
             <p className="eyebrow">Privacy boundary</p>
             <strong>Private events show as busy.</strong>
             <p>CoPlan exposes time blocks without revealing another person’s title, attendees, location, or agenda.</p>
+          </section>
+          <section className="draft-section">
+            <p className="eyebrow">Pending drafts</p>
+            {state.drafts.length === 0 ? <p className="muted">Scheduling proposals become visible drafts before anything is committed.</p> : (
+              <div className="draft-list">{state.drafts.map((draft) => <button type="button" className="draft-card" key={draft.id} onClick={() => setSelectedDraftId(draft.id)}><strong>{draft.event.title}</strong><span>{timeLabel(draft.event.startsAt)} · review required</span></button>)}</div>
+            )}
           </section>
           <section className="audit-section">
             <p className="eyebrow">Your activity</p>
@@ -303,6 +381,21 @@ export function App() {
           </div>
         </section>
       </div>
+
+      {selectedDraft && (
+        <aside className="event-details draft-details" aria-label="Draft review">
+          <button className="close-button" type="button" aria-label="Close draft review" onClick={() => setSelectedDraftId(null)}>×</button>
+          <p className="eyebrow">Reviewable draft</p>
+          <h2>{selectedDraft.event.title}</h2>
+          <p>{timeLabel(selectedDraft.event.startsAt)}–{timeLabel(selectedDraft.event.endsAt)} · {DISPLAY_TIME_ZONE.replace("_", " ")}</p>
+          <div className="event-diff">
+            <div><span>Before</span><strong>No event or invitations</strong><p>The calendar remains unchanged.</p></div>
+            <div><span>After approval</span><strong>{selectedDraft.event.title}</strong><p>{selectedDraft.event.attendeeIds.map((id) => state.people.find((person) => person.id === id)?.displayName).filter(Boolean).join(", ")}</p></div>
+          </div>
+          <p className="draft-expiry">Draft expires {new Intl.DateTimeFormat("en-US", { timeZone: DISPLAY_TIME_ZONE, month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }).format(new Date(selectedDraft.expiresAt))}.</p>
+          <div className="detail-actions"><button type="button" onClick={() => void discardDraft(selectedDraft)}>Discard draft</button><span className="commit-disabled">Invitation sending is disabled until a later confirmation milestone.</span></div>
+        </aside>
+      )}
 
       {selectedEvent && (
         <aside className="event-details" aria-label="Event details">
