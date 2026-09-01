@@ -4,18 +4,18 @@ Use this checklist after the Cloudflare deployment is live. It combines the proj
 
 ## Deployment
 
-- [ ] The D1 binding in `wrangler.jsonc` points to the intended production database.
-- [ ] `npm run db:migrate:remote` completes successfully.
-- [ ] `npm run deploy` prints a stable public HTTPS URL.
-- [ ] `GET /api/health` succeeds on that URL.
-- [ ] The root and API responses carry the required origin-isolation and `tools=(self)` headers.
+- [x] The D1 binding in `wrangler.jsonc` points to the intended production database.
+- [x] `npm run db:migrate:remote` completes successfully.
+- [x] `npm run deploy` prints a stable public HTTPS URL: `https://mycp.dunnstock.workers.dev`.
+- [x] `GET /api/health` succeeds on that URL.
+- [x] The root and API responses carry the required origin-isolation and `tools=(self)` headers.
 - [ ] `crossOriginIsolated` is `true` in Chrome on the public URL.
 - [ ] The live app can create, confirm, and persist a draft through a refresh.
 
 ## WebMCP proof
 
 - [ ] Test the live URL in Chrome with WebMCP testing enabled.
-- [ ] Test the same URL in ChatGPT’s in-app browser, if supported for the submission.
+- [x] Test the same URL in ChatGPT’s in-app browser: the page and its WebMCP tools load successfully.
 - [ ] Capture tool activity for context, availability, proposal, and draft creation.
 - [ ] Demonstrate that `commit_event` is blocked and that only the visible human confirmation adds the event.
 

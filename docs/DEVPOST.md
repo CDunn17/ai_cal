@@ -48,6 +48,6 @@ After the hackathon, we would add real authentication, provider OAuth, per-user 
 
 ## Submission links
 
-- Live demo: `REPLACE_WITH_DEPLOYED_URL`
+- Live demo: `https://mycp.dunnstock.workers.dev`
 - Source repository: `https://github.com/CDunn17/ai_cal`
 - Demo video: `REPLACE_WITH_PUBLIC_YOUTUBE_URL`

@@ -8,6 +8,8 @@ This is deliberately not “a calendar with a chat box.” The product demonstra
 
 The primary demo is a small, seeded launch team distributed across time zones.
 
+**Live demo:** [mycp.dunnstock.workers.dev](https://mycp.dunnstock.workers.dev)
+
 > “Find a 45-minute launch review next week with Maya and Sam. Avoid their focus blocks, prefer Maya’s afternoon, and leave 15 minutes of travel time.”
 
 The agent uses structured WebMCP tools to find availability and returns ranked options with reasons. The user then asks to shorten one option, add an agenda, and approves the resulting draft. The calendar, event detail panel, and audit trail visibly update.
@@ -282,8 +284,9 @@ Each milestone is independently demoable and small enough to review before movin
 ### 6. Deploy, prove, and submit
 
 - [x] Add reviewer setup, architecture documentation, a submission checklist, a two-minute demo script, and paste-ready Devpost copy in [`docs/`](docs/).
-- [ ] Deploy the Worker and D1 database to Cloudflare on a stable public URL.
-- [ ] Test the live URL in ChatGPT’s in-app browser and Chrome with WebMCP testing enabled.
+- [x] Deploy the Worker and D1 database to Cloudflare on a stable public URL.
+- [x] Test the live URL in ChatGPT’s in-app browser.
+- [ ] Test the live URL in Chrome with WebMCP testing enabled.
 - [ ] Record the under-three-minute demo: request → tool activity → proposals → user adjustment → draft diff → confirmation → committed calendar event.
 
 **Done when:** a fresh reviewer can open the live URL, reproduce the demo, inspect the source, and understand why WebMCP improves the experience. See [`docs/RELEASE_CHECKLIST.md`](docs/RELEASE_CHECKLIST.md) for the remaining external steps.
