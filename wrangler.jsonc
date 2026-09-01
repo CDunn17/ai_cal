@@ -1,20 +1,25 @@
 {
-  "$schema": "./node_modules/wrangler/config-schema.json",
-  "name": "mycp",
-  "main": "src/worker.ts",
-  "compatibility_date": "2026-08-31",
-  "assets": {
-    "directory": "./dist",
-    "binding": "ASSETS",
-    "run_worker_first": true,
-    "not_found_handling": "single-page-application"
-  },
-  "d1_databases": [
-    {
-      "binding": "DB",
-      "database_name": "mycp",
-      "database_id": "00000000-0000-0000-0000-000000000000",
-      "migrations_dir": "migrations"
-    }
-  ]
+	"$schema": "./node_modules/wrangler/config-schema.json",
+	"name": "mycp",
+	"main": "src/worker.ts",
+	"compatibility_date": "2026-08-31",
+	"assets": {
+		"directory": "./dist",
+		"binding": "ASSETS",
+		"run_worker_first": true,
+		"not_found_handling": "single-page-application"
+	},
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "mycp",
+      "database_id": "cae21e0c-f305-467d-97f2-c1e82bc87292",
+			"migrations_dir": "migrations"
+		},
+		{
+			"binding": "mycp",
+			"database_name": "mycp",
+			"database_id": "cae21e0c-f305-467d-97f2-c1e82bc87292"
+		}
+	]
 }
