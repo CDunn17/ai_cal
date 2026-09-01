@@ -1,4 +1,4 @@
-CREATE TABLE IF NOT EXISTS coplan_state (
+CREATE TABLE IF NOT EXISTS mycp_state (
   id TEXT PRIMARY KEY,
   value TEXT NOT NULL,
   revision INTEGER NOT NULL,

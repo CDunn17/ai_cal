@@ -1,6 +1,6 @@
-# CoPlan — an agent-native shared calendar
+# MyCP — My Calendar Planner
 
-CoPlan is a WebMCP-enabled calendar for **human-controlled scheduling delegation**. People retain the familiar week/day calendar experience; an agent can reliably inspect scheduling context, recommend trade-offs, create a visible draft, and commit a change only when the person approves it.
+MyCP (My Calendar Planner) is a WebMCP-enabled calendar for **human-controlled scheduling delegation**. People retain the familiar week/day calendar experience; an agent can reliably inspect scheduling context, recommend trade-offs, create a visible draft, and commit a change only when the person approves it.
 
 This is deliberately not “a calendar with a chat box.” The product demonstrates an interaction that conventional calendars cannot support cleanly: a person and their agent negotiating a schedule together in the same, visible interface.
 
@@ -134,7 +134,7 @@ npm run db:migrate:local
 npm run dev:worker
 ```
 
-Before a remote deployment, create a D1 database named coplan, replace the placeholder database ID in wrangler.jsonc with the returned ID, and apply the migration remotely. The placeholder prevents accidental deployment to an unintended database.
+Before a remote deployment, create a D1 database named mycp, replace the placeholder database ID in wrangler.jsonc with the returned ID, and apply the migration remotely. The placeholder prevents accidental deployment to an unintended database.
 
 ### Submission kit
 
@@ -180,7 +180,7 @@ Exact API shapes may evolve while WebMCP remains a proposed standard, so keep re
 - Return minimal structured data. A free/busy result says `busy`, `free`, or `tentative`, not “private therapy appointment.”
 - Treat event titles, descriptions, attendee names, and locations as untrusted content. Return them as data, never re-inject them into tool instructions.
 - Give read-only tools the appropriate read-only annotation when available.
-- Keep individual tool results within 1.5 KB; CoPlan uses a 1.4 KB UTF-8 cap and safe truncation. [Chrome tool-security guidance](https://developer.chrome.com/docs/ai/webmcp/secure-tools)
+- Keep individual tool results within 1.5 KB; MyCP uses a 1.4 KB UTF-8 cap and safe truncation. [Chrome tool-security guidance](https://developer.chrome.com/docs/ai/webmcp/secure-tools)
 
 ### Current WebMCP adapter
 

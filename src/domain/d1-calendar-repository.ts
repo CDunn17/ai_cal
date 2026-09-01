@@ -45,7 +45,7 @@ export class D1CalendarRepository {
   private async withStore<T>(operation: (store: CalendarStore) => T): Promise<T> {
     for (let attempt = 0; attempt < 3; attempt += 1) {
       const stored = await this.database
-        .prepare("SELECT value, revision FROM coplan_state WHERE id = ?")
+        .prepare("SELECT value, revision FROM mycp_state WHERE id = ?")
         .bind("demo")
         .first<StoredState>();
       const store = stored
@@ -56,7 +56,7 @@ export class D1CalendarRepository {
 
       if (!stored) {
         const inserted = await this.database
-          .prepare("INSERT OR IGNORE INTO coplan_state (id, value, revision, updated_at) VALUES (?, ?, ?, ?)")
+          .prepare("INSERT OR IGNORE INTO mycp_state (id, value, revision, updated_at) VALUES (?, ?, ?, ?)")
           .bind("demo", value, 1, new Date().toISOString())
           .run();
         if (inserted.meta.changes === 1) return result;
@@ -64,7 +64,7 @@ export class D1CalendarRepository {
       }
 
       const updated = await this.database
-        .prepare("UPDATE coplan_state SET value = ?, revision = revision + 1, updated_at = ? WHERE id = ? AND revision = ?")
+        .prepare("UPDATE mycp_state SET value = ?, revision = revision + 1, updated_at = ? WHERE id = ? AND revision = ?")
         .bind(value, new Date().toISOString(), "demo", stored.revision)
         .run();
       if (updated.meta.changes === 1) return result;

@@ -1,5 +1,5 @@
 {
-  "name": "coplan",
+  "name": "mycp",
   "private": true,
   "version": "0.1.0",
   "type": "module",
@@ -7,8 +7,8 @@
     "build": "vite build",
     "dev": "vite",
     "dev:worker": "npm run build && wrangler dev",
-    "db:migrate:local": "wrangler d1 migrations apply coplan --local",
-    "db:migrate:remote": "wrangler d1 migrations apply coplan --remote",
+    "db:migrate:local": "wrangler d1 migrations apply mycp --local",
+    "db:migrate:remote": "wrangler d1 migrations apply mycp --remote",
     "deploy": "npm run build && wrangler deploy",
     "lint": "eslint .",
     "test": "vitest run",

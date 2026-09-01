@@ -5,7 +5,7 @@ Use this checklist after the Cloudflare deployment is live. It combines the proj
 ## Deployment
 
 - [ ] A real D1 database ID replaces the placeholder in `wrangler.jsonc`.
-- [ ] `npx wrangler d1 migrations apply coplan --remote` completes successfully.
+- [ ] `npm run db:migrate:remote` completes successfully.
 - [ ] `npm run deploy` prints a stable public HTTPS URL.
 - [ ] `GET /api/health` succeeds on that URL.
 - [ ] The root and API responses carry the required origin-isolation and `tools=(self)` headers.

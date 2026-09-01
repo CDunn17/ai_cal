@@ -10,8 +10,8 @@ export type ToolActivity = Readonly<{
   occurredAt: string;
 }>;
 
-const ACTIVITY_EVENT = "coplan:tool-activity";
-const STATE_CHANGED_EVENT = "coplan:calendar-state-changed";
+const ACTIVITY_EVENT = "mycp:tool-activity";
+const STATE_CHANGED_EVENT = "mycp:calendar-state-changed";
 export const MAX_TOOL_OUTPUT_BYTES = 1_400;
 
 type JsonRecord = Record<string, unknown>;

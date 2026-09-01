@@ -2,11 +2,11 @@
 
 ## Project name
 
-CoPlan — human-controlled AI calendar collaboration
+MyCP — My Calendar Planner
 
 ## Tagline
 
-An agent-native shared calendar that turns scheduling requests into visible, reviewable drafts instead of silent calendar writes.
+My Calendar Planner: an agent-native shared calendar that turns scheduling requests into visible, reviewable drafts instead of silent calendar writes.
 
 ## Inspiration
 
@@ -14,7 +14,7 @@ Calendar work is full of small but consequential trade-offs: time zones, focus t
 
 ## What it does
 
-CoPlan is a seeded shared-calendar demo for a distributed launch team. A browser agent uses WebMCP tools to inspect narrowly scoped context, find availability, and rank meeting options. It can create and revise a visible draft, but the tool layer cannot commit it or send invitations.
+MyCP is a seeded shared-calendar demo for a distributed launch team. A browser agent uses WebMCP tools to inspect narrowly scoped context, find availability, and rank meeting options. It can create and revise a visible draft, but the tool layer cannot commit it or send invitations.
 
 The person reviews a before/after diff in the calendar, opens a confirmation dialog, and explicitly adds the event. That API path requires the reviewed draft revision, a five-minute one-time confirmation, and an idempotency key. Private events remain generic Busy blocks outside the owner’s access.
 
@@ -29,7 +29,7 @@ The person reviews a before/after diff in the calendar, opens a confirmation dia
 
 ## WebMCP usage
 
-CoPlan registers nine intent-level tools rather than exposing DOM selectors or database access. Read tools are annotated as read-only. Tool outputs carrying calendar content are marked untrusted and limited to 1.4 KB of UTF-8 data; the adapter returns compact events and candidate slots, or a safe truncation response. Mutations are draft-only. `commit_event` is intentionally blocked so an agent cannot bypass the human confirmation flow.
+MyCP registers nine intent-level tools rather than exposing DOM selectors or database access. Read tools are annotated as read-only. Tool outputs carrying calendar content are marked untrusted and limited to 1.4 KB of UTF-8 data; the adapter returns compact events and candidate slots, or a safe truncation response. Mutations are draft-only. `commit_event` is intentionally blocked so an agent cannot bypass the human confirmation flow.
 
 ## Challenges we ran into
 

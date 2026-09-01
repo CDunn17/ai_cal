@@ -72,7 +72,7 @@ export default {
     const url = new URL(request.url);
     const calendarStore = new D1CalendarRepository(env.DB);
     if (url.pathname === "/api/health") {
-      return apiResponse({ status: "ok", service: "coplan", timestamp: new Date().toISOString() });
+      return apiResponse({ status: "ok", service: "mycp", timestamp: new Date().toISOString() });
     }
 
     try {

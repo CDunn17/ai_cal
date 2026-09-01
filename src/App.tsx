@@ -337,7 +337,7 @@ export function App() {
     return (
       <main className="load-state">
         <p className="eyebrow">Calendar unavailable</p>
-        <h1>Run CoPlan through its Worker.</h1>
+        <h1>Run MyCP through its Worker.</h1>
         <p>{loadError}</p>
         <code>npm run dev:worker</code>
         <button type="button" onClick={() => void refresh()}>Try again</button>
@@ -346,13 +346,13 @@ export function App() {
   }
 
   if (!state) {
-    return <main className="load-state"><p>Loading CoPlan…</p></main>;
+    return <main className="load-state"><p>Loading MyCP…</p></main>;
   }
 
   return (
     <main className="calendar-app">
       <header className="calendar-header">
-        <div className="brand"><span className="brand-mark">C</span><strong>CoPlan</strong></div>
+        <div className="brand"><span className="brand-mark">M</span><strong>MyCP</strong></div>
         <div className="week-controls"><button type="button" className="icon-button" aria-label="Previous week">‹</button><strong>September 2026</strong><button type="button" className="icon-button" aria-label="Next week">›</button></div>
         <div className="header-actions"><span className="timezone-label">{DISPLAY_TIME_ZONE.replace("_", " ")}</span><button type="button" className="secondary-button" disabled={isFindingTime} onClick={() => void findTime()}>{isFindingTime ? "Finding…" : "Find time"}</button><button type="button" className="primary-button" onClick={() => setForm(toEventForm())}>New event</button></div>
       </header>
@@ -384,7 +384,7 @@ export function App() {
           <section className="free-busy-note">
             <p className="eyebrow">Privacy boundary</p>
             <strong>Private events show as busy.</strong>
-            <p>CoPlan exposes time blocks without revealing another person’s title, attendees, location, or agenda.</p>
+            <p>MyCP exposes time blocks without revealing another person’s title, attendees, location, or agenda.</p>
           </section>
           <section className="draft-section">
             <p className="eyebrow">Pending drafts</p>
@@ -512,7 +512,7 @@ export function App() {
             <button type="button" className="close-button" aria-label="Close confirmation" disabled={isCommitting} onClick={() => setCommitConfirmation(null)}>×</button>
             <p className="eyebrow">Human approval required</p>
             <h2 id="confirmation-title">Add this event to your calendar?</h2>
-            <p>This will create the confirmed event below. CoPlan does not send invitations in this demo.</p>
+            <p>This will create the confirmed event below. MyCP does not send invitations in this demo.</p>
             <dl>
               <div><dt>Event</dt><dd>{selectedDraft.event.title}</dd></div>
               <div><dt>Time</dt><dd>{timeLabel(selectedDraft.event.startsAt)}–{timeLabel(selectedDraft.event.endsAt)} · {DISPLAY_TIME_ZONE.replace("_", " ")}</dd></div>

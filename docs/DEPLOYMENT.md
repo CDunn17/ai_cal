@@ -1,6 +1,6 @@
 # Cloudflare deployment
 
-CoPlan is a single Cloudflare Worker deployment: the Worker serves the Vite SPA, handles the same-origin API, adds the WebMCP security headers, and persists the seeded demo state in D1.
+MyCP is a single Cloudflare Worker deployment: the Worker serves the Vite SPA, handles the same-origin API, adds the WebMCP security headers, and persists the seeded demo state in D1.
 
 `assets.run_worker_first` is intentionally enabled in `wrangler.jsonc`: static assets must pass through the Worker so the document receives the origin-isolation and WebMCP permissions headers. Cloudflare documents this asset-routing behavior in its [static assets configuration guide](https://developers.cloudflare.com/workers/static-assets/binding/).
 
@@ -12,10 +12,10 @@ CoPlan is a single Cloudflare Worker deployment: the Worker serves the Vite SPA,
    npx wrangler login
    ```
 
-2. Create the D1 database. Use a distinct name if `coplan` already exists in the account:
+2. Create the D1 database. Use a distinct name if `mycp` already exists in the account:
 
    ```sh
-   npx wrangler d1 create coplan
+   npx wrangler d1 create mycp
    ```
 
 3. Copy the returned `database_id` into the `d1_databases[0].database_id` field in `wrangler.jsonc`. The committed all-zero value is intentionally a non-deployable placeholder.
