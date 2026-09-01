@@ -192,6 +192,7 @@ Milestone 4 registers nine imperative tools from a small browser-only adapter. I
 - Draft tools call the same Worker commands as the human UI; a successful mutation refreshes the visible calendar state.
 - Tool outputs that can contain event data carry the untrusted-content annotation. Calendar titles, agenda, locations, and attendee data are never treated as instructions.
 - Every adapter response is a structured, UTF-8 byte-bounded result (1.4 KB maximum). Context returns calendar identities, at most three pending drafts, and a count; candidate tools return at most three compact slots. Oversized output is replaced with a safe truncated result that tells the agent to use a narrower read.
+- The in-app **Live WebMCP trace** updates one card per agent call, showing its tool name, status, bounded input preview, and bounded result preview. Calendar text remains visibly labelled as untrusted data.
 - Commit remains registered only to communicate the guardrail: it returns a structured blocked result. The separate human UI owns the visible confirmation path; the WebMCP tool cannot create an event or send invitations.
 
 ## Safety, privacy, and control

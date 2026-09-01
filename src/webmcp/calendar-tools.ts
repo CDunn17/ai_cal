@@ -7,12 +7,15 @@ export type ToolActivity = Readonly<{
   mode: "read" | "draft" | "blocked";
   outcome: "started" | "succeeded" | "failed" | "blocked";
   summary: string;
+  requestPreview?: string;
+  responsePreview?: string;
   occurredAt: string;
 }>;
 
 const ACTIVITY_EVENT = "mycp:tool-activity";
 const STATE_CHANGED_EVENT = "mycp:calendar-state-changed";
 export const MAX_TOOL_OUTPUT_BYTES = 1_400;
+export const MAX_ACTIVITY_PREVIEW_BYTES = 600;
 
 type JsonRecord = Record<string, unknown>;
 
@@ -20,10 +23,10 @@ function schema(properties: JsonRecord, required: string[] = []): JsonRecord {
   return { type: "object", properties, required, additionalProperties: false };
 }
 
-function report(tool: string, mode: ToolActivity["mode"], outcome: ToolActivity["outcome"], summary: string): void {
+function report(activity: Omit<ToolActivity, "occurredAt">): void {
   window.dispatchEvent(
     new CustomEvent<ToolActivity>(ACTIVITY_EVENT, {
-      detail: { id: crypto.randomUUID(), tool, mode, outcome, summary, occurredAt: new Date().toISOString() }
+      detail: { ...activity, occurredAt: new Date().toISOString() }
     })
   );
 }
@@ -37,6 +40,15 @@ export function formatToolResult(status: "ok" | "error" | "blocked", data: unkno
       truncated: true,
       message: "Result exceeded the tool output budget. Use a narrower read or a specific event ID."
     }
+  });
+}
+
+export function formatActivityPreview(data: unknown): string {
+  const serialized = JSON.stringify(data);
+  if (new TextEncoder().encode(serialized).byteLength <= MAX_ACTIVITY_PREVIEW_BYTES) return serialized;
+  return JSON.stringify({
+    truncated: true,
+    message: "Preview is bounded. Inspect the tool contract or use a narrower request."
   });
 }
 
@@ -95,20 +107,25 @@ async function api<T>(url: string, init?: RequestInit, signal?: AbortSignal): Pr
 async function runTool(
   tool: string,
   mode: ToolActivity["mode"],
-  operation: () => Promise<unknown>
+  operation: () => Promise<unknown>,
+  input: unknown
 ): Promise<string> {
-  report(tool, mode, "started", "Agent started " + tool + ".");
+  const id = crypto.randomUUID();
+  const requestPreview = formatActivityPreview(input);
+  report({ id, tool, mode, outcome: "started", summary: "Agent called this WebMCP tool.", requestPreview });
   try {
     const data = await operation();
-    report(tool, mode, "succeeded", "Agent completed " + tool + ".");
+    const responsePreview = formatToolResult("ok", data);
+    report({ id, tool, mode, outcome: "succeeded", summary: "Returned a structured, bounded result.", requestPreview, responsePreview });
     if (mode === "draft") {
       window.dispatchEvent(new Event(STATE_CHANGED_EVENT));
     }
-    return formatToolResult("ok", data);
+    return responsePreview;
   } catch (error) {
     const message = error instanceof Error ? error.message : "Calendar tool failed.";
-    report(tool, mode, "failed", "Agent could not complete " + tool + ": " + message);
-    return formatToolResult("error", { message });
+    const responsePreview = formatToolResult("error", { message });
+    report({ id, tool, mode, outcome: "failed", summary: "The tool returned an error.", requestPreview, responsePreview });
+    return responsePreview;
   }
 }
 
@@ -146,7 +163,7 @@ export const calendarTools: WebMCP.ModelContextTool[] = [
         pendingDrafts: state.drafts.slice(0, 3).map(compactDraft),
         visibleEventCount: state.events.length
       };
-    })
+    }, {})
   },
   {
     name: "find_availability",
@@ -157,7 +174,7 @@ export const calendarTools: WebMCP.ModelContextTool[] = [
     execute: async (input, { signal }) => runTool("find_availability", "read", async () => {
       const response = await api<{ proposals: ScheduleCandidate[] }>("/api/proposals", { method: "POST", body: JSON.stringify(input) }, signal);
       return { candidates: compactCandidates(response.proposals) };
-    })
+    }, input)
   },
   {
     name: "propose_schedule",
@@ -168,7 +185,7 @@ export const calendarTools: WebMCP.ModelContextTool[] = [
     execute: async (input, { signal }) => runTool("propose_schedule", "read", async () => {
       const response = await api<{ proposals: ScheduleCandidate[] }>("/api/proposals", { method: "POST", body: JSON.stringify(input) }, signal);
       return { proposals: compactCandidates(response.proposals) };
-    })
+    }, input)
   },
   {
     name: "get_event_details",
@@ -181,7 +198,7 @@ export const calendarTools: WebMCP.ModelContextTool[] = [
       const event = state.events.find((candidate) => candidate.id === input.eventId);
       if (!event) throw new Error("Event not found in the active user's visible calendar.");
       return { event: compactEvent(event) };
-    })
+    }, input)
   },
   {
     name: "create_event_draft",
@@ -192,7 +209,7 @@ export const calendarTools: WebMCP.ModelContextTool[] = [
     execute: async (input, { signal }) => runTool("create_event_draft", "draft", async () => {
       const response = await api<{ draft: EventDraft }>("/api/event-drafts", { method: "POST", body: JSON.stringify(input) }, signal);
       return { draft: compactDraft(response.draft) };
-    })
+    }, input)
   },
   {
     name: "update_event_draft",
@@ -204,7 +221,7 @@ export const calendarTools: WebMCP.ModelContextTool[] = [
       const { draftId, ...changes } = input;
       const response = await api<{ draft: EventDraft }>("/api/event-drafts/" + draftId, { method: "PATCH", body: JSON.stringify(changes) }, signal);
       return { draft: compactDraft(response.draft) };
-    })
+    }, input)
   },
   {
     name: "commit_event",
@@ -212,9 +229,12 @@ export const calendarTools: WebMCP.ModelContextTool[] = [
     description: "Commit is intentionally unavailable until the user reviews a draft in the app and approves a confirmation dialog. Do not use this tool to send invitations.",
     inputSchema: schema({ draftId: { type: "string" }, expectedRevision: { type: "integer", minimum: 1 } }, ["draftId", "expectedRevision"]),
     annotations: { readOnlyHint: false },
-    execute: async () => {
-      report("commit_event", "blocked", "blocked", "Commit is waiting for the human confirmation milestone.");
-      return formatToolResult("blocked", { message: "Human confirmation is required. This build does not commit drafts or send invitations." });
+    execute: async (input) => {
+      const id = crypto.randomUUID();
+      const requestPreview = formatActivityPreview(input);
+      const responsePreview = formatToolResult("blocked", { message: "Human confirmation is required. This build does not commit drafts or send invitations." });
+      report({ id, tool: "commit_event", mode: "blocked", outcome: "blocked", summary: "Blocked: a human must review and confirm the draft in MyCP.", requestPreview, responsePreview });
+      return responsePreview;
     }
   },
   {
@@ -225,7 +245,7 @@ export const calendarTools: WebMCP.ModelContextTool[] = [
     annotations: { readOnlyHint: false },
     execute: async (input, { signal }) => runTool("discard_event_draft", "draft", async () => {
       return api("/api/event-drafts/" + input.draftId, { method: "DELETE", body: JSON.stringify({ expectedRevision: input.expectedRevision }) }, signal);
-    })
+    }, input)
   },
   {
     name: "resolve_conflict",
@@ -243,7 +263,7 @@ export const calendarTools: WebMCP.ModelContextTool[] = [
         body: JSON.stringify({ attendeeIds: event.attendeeIds.filter((id) => id !== state.activeUserId), durationMinutes, rangeStartsAt: input.rangeStartsAt, rangeEndsAt: input.rangeEndsAt })
       }, signal);
       return { alternatives: compactCandidates(response.proposals) };
-    })
+    }, input)
   }
 ];
 

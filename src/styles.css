@@ -49,9 +49,19 @@ button { cursor: pointer; }
 .tool-activity-list li { display: grid; grid-template-columns: 8px 1fr; gap: 8px; align-items: start; }
 .tool-activity-list strong { color: #554f61; font-size: .75rem; }
 .tool-activity-list p { margin: 2px 0 0; color: #756e7d; font-size: .7rem; line-height: 1.35; }
+.tool-activity-card { min-width: 0; }
+.tool-activity-heading { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+.activity-status { border-radius: 999px; padding: 2px 6px; color: #6e6778; background: #efedf2; font-size: .61rem; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; }
+.activity-status.succeeded { color: #216d50; background: #e1f4eb; }
+.activity-status.failed, .activity-status.blocked { color: #93402d; background: #ffebe5; }
 .activity-dot { display: block; width: 8px; height: 8px; margin-top: 4px; border-radius: 50%; background: #9a93a3; }
 .activity-dot.succeeded { background: #379773; }
 .activity-dot.failed, .activity-dot.blocked { background: #bd7253; }
+.tool-trace-details { margin-top: 7px; border: 1px solid #e4dfed; border-radius: 7px; background: #fbfaff; }
+.tool-trace-details summary { cursor: pointer; padding: 6px 7px; color: #665f72; font-size: .67rem; font-weight: 750; }
+.tool-trace-details pre { max-height: 120px; overflow: auto; margin: 0 6px 7px; padding: 7px; border-radius: 5px; color: #4e4858; background: #f1eef7; font: 600 .62rem/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+.trace-label { display: block; margin: 1px 7px 3px; color: #847c91; font-size: .6rem; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
+.trace-label em { color: #9a6230; font-style: normal; }
 
 .week-panel { overflow: hidden; border: 1px solid #e6e2ec; border-radius: 16px; background: #fff; box-shadow: 0 12px 32px rgba(41, 31, 72, .06); }
 .week-title-row { display: grid; grid-template-columns: 72px 1fr; align-items: center; min-height: 54px; border-bottom: 1px solid #ece9f1; }

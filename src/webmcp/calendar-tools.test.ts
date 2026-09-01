@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { calendarTools, formatToolResult, MAX_TOOL_OUTPUT_BYTES, registerCalendarTools } from "./calendar-tools";
+import { calendarTools, formatActivityPreview, formatToolResult, MAX_ACTIVITY_PREVIEW_BYTES, MAX_TOOL_OUTPUT_BYTES, registerCalendarTools } from "./calendar-tools";
 
 describe("calendar WebMCP tools", () => {
   it("exposes the complete scoped calendar tool set", () => {
@@ -51,5 +51,12 @@ describe("calendar WebMCP tools", () => {
       status: "ok",
       data: { truncated: true }
     });
+  });
+
+  it("bounds the human-visible WebMCP trace preview separately from the tool result", () => {
+    const preview = formatActivityPreview({ agenda: "🗓️".repeat(1_000) });
+
+    expect(new TextEncoder().encode(preview).byteLength).toBeLessThanOrEqual(MAX_ACTIVITY_PREVIEW_BYTES);
+    expect(JSON.parse(preview)).toMatchObject({ truncated: true });
   });
 });

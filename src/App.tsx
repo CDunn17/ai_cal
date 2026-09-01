@@ -165,7 +165,7 @@ export function App() {
     let disposeTools: () => void = () => {};
     const onActivity = (event: Event) => {
       const activity = (event as CustomEvent<ToolActivity>).detail;
-      setToolActivities((current) => [activity, ...current].slice(0, 8));
+      setToolActivities((current) => [activity, ...current.filter((candidate) => candidate.id !== activity.id)].slice(0, 8));
     };
     const onStateChanged = () => {
       void refresh();
@@ -393,9 +393,9 @@ export function App() {
             )}
           </section>
           <section className="tool-activity-section">
-            <p className="eyebrow">Agent activity</p>
-            {toolActivities.length === 0 ? <p className="muted">WebMCP tool calls will appear here in real time.</p> : (
-              <ol className="tool-activity-list">{toolActivities.map((activity) => <li key={activity.id}><span className={"activity-dot " + activity.outcome} /><div><strong>{activity.tool}</strong><p>{activity.summary}</p></div></li>)}</ol>
+            <p className="eyebrow">Live WebMCP trace</p>
+            {toolActivities.length === 0 ? <p className="muted">Agent tool calls will appear here with their structured request and result.</p> : (
+              <ol className="tool-activity-list">{toolActivities.map((activity, index) => <li key={activity.id}><span className={"activity-dot " + activity.outcome} /><div className="tool-activity-card"><div className="tool-activity-heading"><strong>{activity.tool}</strong><span className={"activity-status " + activity.outcome}>{activity.outcome}</span></div><p>{activity.summary}</p><details className="tool-trace-details" open={index === 0}><summary>Request &amp; result</summary>{activity.requestPreview && <><span className="trace-label">Tool input</span><pre>{activity.requestPreview}</pre></>}{activity.responsePreview && <><span className="trace-label">Tool result <em>untrusted data</em></span><pre>{activity.responsePreview}</pre></>}</details></div></li>)}</ol>
             )}
           </section>
           <section className="audit-section">
