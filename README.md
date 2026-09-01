@@ -134,7 +134,7 @@ npm run db:migrate:local
 npm run dev:worker
 ```
 
-Before a remote deployment, create a D1 database named mycp, replace the placeholder database ID in wrangler.jsonc with the returned ID, and apply the migration remotely. The placeholder prevents accidental deployment to an unintended database.
+The checked-in configuration is bound to the project’s MyCP D1 database. To deploy this project from a different Cloudflare account or to a different database, create a D1 database, replace the `database_id` in `wrangler.jsonc`, and run the remote migration before deploying.
 
 ### Submission kit
 

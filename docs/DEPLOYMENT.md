@@ -18,7 +18,7 @@ MyCP is a single Cloudflare Worker deployment: the Worker serves the Vite SPA, h
    npx wrangler d1 create mycp
    ```
 
-3. Copy the returned `database_id` into the `d1_databases[0].database_id` field in `wrangler.jsonc`. The committed all-zero value is intentionally a non-deployable placeholder.
+3. Copy the returned `database_id` into the `d1_databases[0].database_id` field in `wrangler.jsonc` if you are deploying from a different Cloudflare account or want a separate database. The checked-in configuration is already bound to the project’s MyCP D1 database.
 
 4. Apply the schema to the remote database:
 

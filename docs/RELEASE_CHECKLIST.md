@@ -4,7 +4,7 @@ Use this checklist after the Cloudflare deployment is live. It combines the proj
 
 ## Deployment
 
-- [ ] A real D1 database ID replaces the placeholder in `wrangler.jsonc`.
+- [ ] The D1 binding in `wrangler.jsonc` points to the intended production database.
 - [ ] `npm run db:migrate:remote` completes successfully.
 - [ ] `npm run deploy` prints a stable public HTTPS URL.
 - [ ] `GET /api/health` succeeds on that URL.
