@@ -29,7 +29,7 @@ The person reviews a before/after diff in the calendar, opens a confirmation dia
 
 ## WebMCP usage
 
-MyCP registers nine intent-level tools rather than exposing DOM selectors or database access. Read tools are annotated as read-only. Tool outputs carrying calendar content are marked untrusted and limited to 1.4 KB of UTF-8 data; the adapter returns compact events and candidate slots, or a safe truncation response. Mutations are draft-only. `commit_event` is intentionally blocked so an agent cannot bypass the human confirmation flow.
+MyCP registers ten intent-level tools rather than exposing DOM selectors or database access. `get_calendar_context` provides bounded calendar/team identifiers, while `get_user_scheduling_profile` reads a purpose-limited profile with meeting preferences, recurring focus blocks, and office/remote work patterns—never a home address, live location, or private events. Read tools are annotated as read-only. Tool outputs carrying calendar content are marked untrusted and limited to 1.4 KB of UTF-8 data; the adapter returns compact events and candidate slots, or a safe truncation response. Mutations are draft-only. `commit_event` is intentionally blocked so an agent cannot bypass the human confirmation flow.
 
 ## Challenges we ran into
 

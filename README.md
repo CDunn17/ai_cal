@@ -1,6 +1,6 @@
 # MyCP — My Calendar Planner
 
-MyCP (My Calendar Planner) is a WebMCP-enabled calendar for **human-controlled scheduling delegation**. People retain the familiar week/day calendar experience; an agent can reliably inspect scheduling context, recommend trade-offs, create a visible draft, and commit a change only when the person approves it.
+MyCP (My Calendar Planner) is a WebMCP-enabled calendar for **human-controlled scheduling delegation**. People retain a familiar week-calendar experience; an agent can inspect scheduling context, recommend trade-offs, and create a visible draft, while only the person can commit an event through the confirmation UI.
 
 This is deliberately not “a calendar with a chat box.” The product demonstrates an interaction that conventional calendars cannot support cleanly: a person and their agent negotiating a schedule together in the same, visible interface.
 
@@ -10,7 +10,7 @@ The primary demo is a small, seeded launch team distributed across time zones.
 
 **Live demo:** [mycp.dunnstock.workers.dev](https://mycp.dunnstock.workers.dev)
 
-> “Find a 45-minute launch review next week with Maya and Sam. Avoid their focus blocks, prefer Maya’s afternoon, and leave 15 minutes of travel time.”
+Create a meeting from **New event**: choose its title, duration, attendees, office, and either a target date with flexibility or a deadline. MyCP then returns ranked options that make the time, focus, and fixed office-travel trade-offs visible.
 
 The agent uses structured WebMCP tools to find availability and returns ranked options with reasons. The user then asks to shorten one option, add an agenda, and approves the resulting draft. The calendar, event detail panel, and audit trail visibly update.
 
@@ -19,15 +19,15 @@ The demo should make four things unmistakable:
 1. The agent calls explicit calendar tools rather than clicking around the DOM.
 2. It has only the context required for the current scheduling task.
 3. Mutations are first-class, inspectable drafts.
-4. A person gives the final approval before an invitation is sent.
+4. A person gives the final approval before a confirmed event is added to the calendar.
 
 ## Capabilities
 
 ### Human experience
 
-- Week and day views with a clear timezone selector.
-- Create, edit, move, and view events through ordinary calendar UI.
-- Team availability overlay, focus-time blocks, working hours, and travel buffers.
+- Week view with a clear display timezone.
+- Plan a new meeting through an ordinary dialog: title, duration, attendees, meeting office, and target-date flexibility or a deadline.
+- Clickable team profiles with bounded meeting preferences, recurring focus blocks, office/remote work patterns, and two deterministic office locations with fixed inter-office travel feedback.
 - Event details with attendees, agenda, location, visibility, and scheduling notes.
 - A **Proposals** surface showing agent-created candidates and a before/after diff.
 - An **Activity** rail recording the tools used, the inputs supplied, the result, and the human approval or rejection.
@@ -39,9 +39,10 @@ The tools expose stable application intent and structured data—not components,
 
 | Tool | Mutation | Contract |
 | --- | --- | --- |
-| `get_calendar_context` | No | Returns the active user’s calendar identities, a bounded list of pending drafts, and a visible-event count—never a full event list. |
-| `find_availability` | No | Finds feasible time windows for a supplied attendee set and constraints. Results are minimised busy/free summaries, never another person’s private event details. |
-| `propose_schedule` | No | Ranks candidate slots and explains the relevant trade-offs: focus time, work hours, buffers, and timezone fairness. |
+| `get_calendar_context` | No | Returns calendar identities, bounded team-member IDs/names, a bounded list of pending drafts, and a visible-event count—never profile details or a full event list. |
+| `get_user_scheduling_profile` | No | Returns one team member’s bounded scheduling profile: requested meeting preferences, office/remote week pattern, and recurring focus blocks. It never returns a home address, live location, or calendar events. |
+| `find_availability` | No | Finds feasible time windows for a supplied attendee set and constraints, with optional office travel feedback. Results are minimised busy/free summaries, never another person’s private event details. |
+| `propose_schedule` | No | Ranks candidate slots and explains the relevant trade-offs: focus time, work hours, buffers, fixed office travel, and timezone fairness. |
 | `get_event_details` | No | Returns a single event only when it is visible to the active user. |
 | `create_event_draft` | Draft only | Creates a visible, server-validated draft with a 24-hour expiry. It cannot send invitations. |
 | `update_event_draft` | Draft only | Changes an existing draft by ID and returns a compact, current draft projection. |
@@ -116,7 +117,8 @@ Milestones 2 and 3 run a deterministic, fictional demo identity (Alex) through t
 | GET /api/calendar-state | Returns the active user’s team, calendar list, readable events, pending drafts, and their human audit entries. Private events not owned by or shared with the user are projected as a generic Busy block. |
 | POST /api/events | Creates a confirmed event only on the active user’s calendar. The server validates timestamps, timezone, visibility, and attendee IDs, injects the active user as an attendee, and records an audit entry. |
 | PATCH /api/events/:id | Edits or moves an event only on the active user’s calendar. Every request includes the reviewed revision; stale writes are rejected with 409 Conflict. |
-| POST /api/proposals | Searches 15-minute slots using working hours, protected busy time, travel buffers, and time-of-day preferences. Results contain free/busy-derived reasons and warnings, never a private event’s details. |
+| GET /api/team-members/:id/scheduling-profile | Returns one visible team member’s validated, scheduling-only profile. It excludes home address, live location, and all calendar-event content. |
+| POST /api/proposals | Searches 15-minute slots using working hours, protected busy time, recurring focus blocks, profile travel buffers, and profile meeting preferences. An optional selected office yields fixed, work-pattern-aware travel feedback. Results contain free/busy-derived reasons and warnings, never a private event’s details. |
 | POST /api/event-drafts | Creates a separate, 24-hour reviewable draft on the active user’s calendar. It remains out of the committed event collection and cannot send invitations. |
 | PATCH /api/event-drafts/:id | Updates a visible draft by current revision, preserving draft-only status. |
 | DELETE /api/event-drafts/:id | Discards a pending draft only when its current revision is supplied. |
@@ -124,6 +126,16 @@ Milestones 2 and 3 run a deterministic, fictional demo identity (Alex) through t
 | POST /api/event-drafts/:id/commit | Requires that current confirmation, revision, and an `Idempotency-Key`; then converts the draft into a confirmed event and records the human approval. It never sends invitations. |
 
 The seeded demo uses a D1-backed state record. It is deliberately compact for the hackathon, while the Worker command and permission boundary remains suitable for a later normalized calendar schema.
+
+## Devpost Submission
+
+MyCP lets a manager ask an agent to schedule a hybrid-team meeting by deadline. The agent reads only the relevant teammate scheduling profiles and free/busy constraints, accounts for recurring focus time and office/remote workdays, proposes explainable slots, and creates a visible draft. Only the person can confirm the event.
+
+### Scheduling profiles
+
+Each fictional teammate has a versioned `SchedulingProfile` used by the scheduling engine as the source of truth. It contains a preferred meeting window, a protected recurring focus pattern, a Monday–Friday office/remote work pattern, a default office ID, and a bounded travel-buffer setting. The sidebar shows the same profile projection people can inspect before scheduling.
+
+The agent may read a profile only through `get_user_scheduling_profile`; it cannot obtain the values by inspecting the UI or submit its own profile claims as scheduling constraints. The Worker loads and enforces the stored profile when producing proposals. This keeps profile details purpose-limited and prevents a model from bypassing a focus or travel rule by omitting it from a request.
 
 ### D1 persistence
 
@@ -186,7 +198,7 @@ Exact API shapes may evolve while WebMCP remains a proposed standard, so keep re
 
 ### Current WebMCP adapter
 
-Milestone 4 registers nine imperative tools from a small browser-only adapter. It uses the official WebMCP TypeScript declarations, registers tools with an AbortController for component-lifecycle cleanup, and makes every tool call visible in the in-app Agent activity rail.
+Milestone 4 registers ten imperative tools from a small browser-only adapter, including a bounded scheduling-profile read. It uses the official WebMCP TypeScript declarations, registers tools with an AbortController for component-lifecycle cleanup, and makes every tool call visible in the in-app Agent activity rail.
 
 - Read tools return a privacy-filtered state projection or scheduling options and carry the read-only annotation.
 - Draft tools call the same Worker commands as the human UI; a successful mutation refreshes the visible calendar state.
@@ -267,7 +279,7 @@ Each milestone is independently demoable and small enough to review before movin
 
 ### 4. WebMCP tool layer
 
-- Add the isolated WebMCP adapter and register the nine scoped tools.
+- Add the isolated WebMCP adapter and register the ten scoped tools.
 - Validate every tool schema, return useful structured errors, and apply read-only annotations.
 - Route tools through the same domain commands used by the UI.
 - Surface tool activity in the activity rail and enforce draft-only mutations.

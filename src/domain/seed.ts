@@ -1,4 +1,5 @@
 import { demoDataSchema, type DemoData } from "./contracts";
+import { initialSchedulingProfiles } from "./scheduling-profiles";
 
 const rawDemoData = {
   people: [
@@ -36,6 +37,7 @@ const rawDemoData = {
       }
     }
   ],
+  schedulingProfiles: initialSchedulingProfiles,
   calendars: [
     { id: "maya-main", ownerId: "maya", name: "Maya", timeZone: "America/Los_Angeles", color: "#8466f6" },
     { id: "sam-main", ownerId: "sam", name: "Sam", timeZone: "America/New_York", color: "#21a179" },

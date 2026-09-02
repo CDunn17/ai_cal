@@ -28,7 +28,7 @@ describe("scheduling foundations", () => {
   });
 
   it("ranks valid slots without exposing or colliding with private busy time", () => {
-    const proposals = proposeSchedule(demoData.events, demoData.people, "alex", {
+    const proposals = proposeSchedule(demoData.events, demoData.people, demoData.schedulingProfiles ?? [], "alex", {
       attendeeIds: ["maya", "sam"],
       durationMinutes: 45,
       rangeStartsAt: "2026-09-08T12:00:00.000Z",
@@ -41,5 +41,29 @@ describe("scheduling foundations", () => {
       endsAt: "2026-09-08T21:00:00.000Z"
     });
     expect(proposals[0].reasons).toContain("Fits everyone’s working hours and travel buffers.");
+  });
+
+  it("returns fixed office travel feedback without exposing event details", () => {
+    const proposals = proposeSchedule(demoData.events, demoData.people, demoData.schedulingProfiles ?? [], "alex", {
+      attendeeIds: ["maya", "sam"],
+      durationMinutes: 45,
+      officeId: "new-york-hq",
+      rangeStartsAt: "2026-09-08T12:00:00.000Z",
+      rangeEndsAt: "2026-09-09T00:00:00.000Z"
+    });
+
+    expect(proposals[0].reasons).toContain("Meeting at New York HQ.");
+    expect(proposals[0].reasons).toContain("Maya Chen works remotely that day; no office commute is assumed.");
+  });
+
+  it("enforces recurring focus blocks that are not calendar events", () => {
+    const proposals = proposeSchedule(demoData.events, demoData.people, demoData.schedulingProfiles ?? [], "alex", {
+      attendeeIds: ["maya", "sam"],
+      durationMinutes: 45,
+      rangeStartsAt: "2026-09-09T17:00:00.000Z",
+      rangeEndsAt: "2026-09-09T18:00:00.000Z"
+    });
+
+    expect(proposals).toEqual([]);
   });
 });

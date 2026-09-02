@@ -79,6 +79,10 @@ export default {
       if (request.method === "GET" && url.pathname === "/api/calendar-state") {
         return apiResponse(await calendarStore.stateFor(activeDemoUserId));
       }
+      const profileMatch = url.pathname.match(/^\/api\/team-members\/([^/]+)\/scheduling-profile$/);
+      if (request.method === "GET" && profileMatch) {
+        return apiResponse({ profile: await calendarStore.schedulingProfileFor(activeDemoUserId, decodeURIComponent(profileMatch[1])) });
+      }
       if (request.method === "POST" && url.pathname === "/api/events") {
         return apiResponse({ event: await calendarStore.create(activeDemoUserId, await requestJson(request)) }, { status: 201 });
       }

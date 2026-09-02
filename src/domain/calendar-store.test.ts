@@ -12,6 +12,29 @@ describe("CalendarStore", () => {
     expect(privateEvent?.agenda).toBeUndefined();
   });
 
+  it("returns a versioned scheduling profile without calendar-event content", () => {
+    const profile = new CalendarStore(demoData).schedulingProfileFor("alex", "maya");
+
+    expect(profile).toMatchObject({
+      personId: "maya",
+      revision: 1,
+      defaultOfficeId: "san-francisco-studio",
+      meetingPreferences: { preferredMeetingWindow: "afternoon" }
+    });
+    expect(profile.recurringFocusBlocks).toContainEqual({ weekday: "wednesday", start: "10:00", end: "11:00" });
+  });
+
+  it("hydrates legacy persisted state with safe scheduling-profile defaults", () => {
+    const legacyData = { ...demoData, schedulingProfiles: undefined };
+    const state = new CalendarStore(legacyData).stateFor("alex");
+
+    expect(state.schedulingProfiles).toHaveLength(3);
+    expect(state.schedulingProfiles.find((profile) => profile.personId === "maya")).toMatchObject({
+      defaultOfficeId: "san-francisco-studio",
+      recurringFocusBlocks: [{ weekday: "wednesday", start: "10:00", end: "11:00" }]
+    });
+  });
+
   it("creates, updates, and audits an event on the active user's calendar", () => {
     const store = new CalendarStore(demoData);
     const created = store.create("alex", {

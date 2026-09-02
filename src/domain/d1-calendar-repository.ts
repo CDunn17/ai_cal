@@ -14,6 +14,10 @@ export class D1CalendarRepository {
     return this.withStore((store) => store.propose(activeUserId, input));
   }
 
+  async schedulingProfileFor(activeUserId: string, personId: string) {
+    return this.withStore((store) => store.schedulingProfileFor(activeUserId, personId));
+  }
+
   async create(activeUserId: string, input: unknown) {
     return this.withStore((store) => store.create(activeUserId, input));
   }

@@ -1,4 +1,5 @@
-import { scheduleCandidateSchema, type CalendarEvent, type Person, type ScheduleCandidate, type ScheduleRequest } from "./contracts";
+import { scheduleCandidateSchema, type CalendarEvent, type Person, type ScheduleCandidate, type ScheduleRequest, type SchedulingProfile, type Weekday } from "./contracts";
+import { designatedOfficeFor, formatTravelMinutes, officeById, travelMinutesBetween } from "./offices";
 
 export type BusyBlock = Readonly<{
   startsAt: string;
@@ -46,8 +47,8 @@ function roundedUpToQuarterHour(timestamp: number): number {
   return Math.ceil(timestamp / quarter) * quarter;
 }
 
-function eventIntervalWithBuffer(event: CalendarEvent, person: Person): CandidateInterval {
-  const buffer = person.schedulingPreferences.travelBufferMinutes * 60_000;
+function eventIntervalWithBuffer(event: CalendarEvent, profile: SchedulingProfile): CandidateInterval {
+  const buffer = profile.meetingPreferences.travelBufferMinutes * 60_000;
   return {
     startsAt: new Date(Date.parse(event.startsAt) - buffer).toISOString(),
     endsAt: new Date(Date.parse(event.endsAt) + buffer).toISOString()
@@ -74,9 +75,32 @@ function overlaps(left: CandidateInterval, right: CandidateInterval): boolean {
   return Date.parse(left.startsAt) < Date.parse(right.endsAt) && Date.parse(right.startsAt) < Date.parse(left.endsAt);
 }
 
-function preferenceFeedback(interval: CandidateInterval, person: Person): { score: number; reason?: string; warning?: string } {
+function weekdayFor(instant: string, timeZone: string): Weekday | null {
+  const weekday = localDateParts(instant, timeZone).weekday;
+  const weekdays: Readonly<Record<string, Weekday>> = {
+    Mon: "monday",
+    Tue: "tuesday",
+    Wed: "wednesday",
+    Thu: "thursday",
+    Fri: "friday"
+  };
+  return weekdays[weekday] ?? null;
+}
+
+function overlapsRecurringFocusBlock(interval: CandidateInterval, person: Person, profile: SchedulingProfile): boolean {
+  if (!profile.meetingPreferences.protectRecurringFocusTime) return false;
+  const weekday = weekdayFor(interval.startsAt, person.timeZone);
+  if (!weekday) return false;
+  const startsAt = localMinutes(interval.startsAt, person.timeZone);
+  const endsAt = localMinutes(interval.endsAt, person.timeZone);
+  return profile.recurringFocusBlocks.some((block) =>
+    block.weekday === weekday && startsAt < minutesFromClock(block.end) && minutesFromClock(block.start) < endsAt
+  );
+}
+
+function preferenceFeedback(interval: CandidateInterval, person: Person, profile: SchedulingProfile): { score: number; reason?: string; warning?: string } {
   const hour = Math.floor(localMinutes(interval.startsAt, person.timeZone) / 60);
-  const preference = person.schedulingPreferences.preferredMeetingWindow;
+  const preference = profile.meetingPreferences.preferredMeetingWindow;
   if (preference === "any") {
     return { score: 10, reason: person.displayName + " has no time-of-day preference." };
   }
@@ -103,6 +127,7 @@ export function eventsOverlap(left: BusyBlock, right: BusyBlock): boolean {
 export function proposeSchedule(
   events: readonly CalendarEvent[],
   people: readonly Person[],
+  profiles: readonly SchedulingProfile[],
   activeUserId: string,
   request: ScheduleRequest,
   maxResults = 3
@@ -111,6 +136,11 @@ export function proposeSchedule(
   const participants = participantIds.map((id) => people.find((person) => person.id === id)).filter((person): person is Person => Boolean(person));
   if (participants.length !== participantIds.length) {
     throw new Error("One or more requested attendees do not exist.");
+  }
+  const profilesByPersonId = new Map(profiles.map((profile) => [profile.personId, profile]));
+  const participantProfiles = participants.map((person) => profilesByPersonId.get(person.id));
+  if (participantProfiles.some((profile) => !profile)) {
+    throw new Error("One or more attendees do not have a scheduling profile.");
   }
 
   const durationMilliseconds = request.durationMinutes * 60_000;
@@ -125,25 +155,48 @@ export function proposeSchedule(
     if (!participants.every((person) => isWithinWorkingHours(interval, person))) {
       continue;
     }
-    const intersectsBusyTime = participants.some((person) =>
+    const intersectsBusyTime = participants.some((person, index) =>
       events
         .filter((event) => event.status !== "draft" && event.attendeeIds.includes(person.id))
-        .some((event) => overlaps(interval, eventIntervalWithBuffer(event, person)))
+        .some((event) => overlaps(interval, eventIntervalWithBuffer(event, participantProfiles[index]!)))
     );
-    if (intersectsBusyTime) {
+    const intersectsRecurringFocusTime = participants.some((person, index) => overlapsRecurringFocusBlock(interval, person, participantProfiles[index]!));
+    if (intersectsBusyTime || intersectsRecurringFocusTime) {
       continue;
     }
 
     let score = 50;
     const reasons = ["Fits everyone’s working hours and travel buffers."];
     const warnings: string[] = [];
-    for (const person of participants) {
-      const feedback = preferenceFeedback(interval, person);
+    if (request.officeId) {
+      const meetingOffice = officeById(request.officeId);
+      reasons.push("Meeting at " + meetingOffice.name + ".");
+      for (let index = 0; index < participants.length; index += 1) {
+        const person = participants[index];
+        const profile = participantProfiles[index]!;
+        const weekday = weekdayFor(interval.startsAt, person.timeZone);
+        const workday = profile.weeklyWorkPattern.find((candidate) => candidate.weekday === weekday);
+        if (workday?.mode === "remote") {
+          reasons.push(person.displayName + " works remotely that day; no office commute is assumed.");
+          continue;
+        }
+        const homeOffice = workday?.officeId ? officeById(workday.officeId) : designatedOfficeFor(person.id);
+        const travelMinutes = travelMinutesBetween(homeOffice.id, meetingOffice.id);
+        if (travelMinutes === 0) continue;
+        warnings.push(
+          person.displayName + " is based at " + homeOffice.name + " (" + formatTravelMinutes(travelMinutes) + " travel to " + meetingOffice.name + ")."
+        );
+        score -= 5;
+      }
+    }
+    for (let index = 0; index < participants.length; index += 1) {
+      const person = participants[index];
+      const feedback = preferenceFeedback(interval, person, participantProfiles[index]!);
       score += feedback.score;
       if (feedback.reason) reasons.push(feedback.reason);
       if (feedback.warning) warnings.push(feedback.warning);
     }
-    candidates.push(scheduleCandidateSchema.parse({ ...interval, score, reasons, warnings }));
+    candidates.push(scheduleCandidateSchema.parse({ ...interval, score, reasons: reasons.slice(0, 10), warnings: warnings.slice(0, 10) }));
   }
 
   return candidates

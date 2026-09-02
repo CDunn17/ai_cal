@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { OFFICE_IDS } from "./offices";
 
 export const timeZoneSchema = z
   .string()
@@ -25,6 +26,30 @@ export const personSchema = z.object({
     focusBlocksProtected: z.boolean(),
     travelBufferMinutes: z.number().int().min(0).max(120)
   })
+});
+
+export const weekdaySchema = z.enum(["monday", "tuesday", "wednesday", "thursday", "friday"]);
+export const workModeSchema = z.enum(["office", "remote"]);
+
+export const schedulingProfileSchema = z.object({
+  personId: z.string().min(1),
+  revision: z.number().int().positive(),
+  defaultOfficeId: z.enum(OFFICE_IDS),
+  meetingPreferences: z.object({
+    preferredMeetingWindow: z.enum(["morning", "afternoon", "any"]),
+    protectRecurringFocusTime: z.boolean(),
+    travelBufferMinutes: z.number().int().min(0).max(120)
+  }),
+  weeklyWorkPattern: z.array(z.object({
+    weekday: weekdaySchema,
+    mode: workModeSchema,
+    officeId: z.enum(OFFICE_IDS).optional()
+  })).length(5),
+  recurringFocusBlocks: z.array(z.object({
+    weekday: weekdaySchema,
+    start: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
+    end: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/)
+  }).refine((block) => block.start < block.end, { message: "A focus block must end after it starts." })).max(10)
 });
 
 export const calendarSchema = z.object({
@@ -76,6 +101,7 @@ export const scheduleRequestSchema = z
   .object({
     attendeeIds: z.array(z.string().min(1)).min(1).max(10),
     durationMinutes: z.number().int().min(15).max(120).multipleOf(15),
+    officeId: z.enum(OFFICE_IDS).optional(),
     rangeStartsAt: z.string().datetime({ offset: true }),
     rangeEndsAt: z.string().datetime({ offset: true })
   })
@@ -134,11 +160,14 @@ export const auditEntrySchema = z.object({
 
 export const demoDataSchema = z.object({
   people: z.array(personSchema).min(1),
+  schedulingProfiles: z.array(schedulingProfileSchema).optional(),
   calendars: z.array(calendarSchema).min(1),
   events: z.array(calendarEventSchema)
 });
 
 export type Person = z.infer<typeof personSchema>;
+export type Weekday = z.infer<typeof weekdaySchema>;
+export type SchedulingProfile = z.infer<typeof schedulingProfileSchema>;
 export type Calendar = z.infer<typeof calendarSchema>;
 export type CalendarEvent = z.infer<typeof calendarEventSchema>;
 export type EventVisibility = z.infer<typeof eventVisibilitySchema>;

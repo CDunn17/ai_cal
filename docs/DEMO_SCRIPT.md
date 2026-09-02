@@ -10,13 +10,17 @@ Show the week calendar and say:
 
 Point out the privacy boundary and the Agent activity rail.
 
-## 0:15–0:50 — WebMCP scheduling
+Click Maya in the **Team** list. Show her scheduling-only profile: preferred meeting window, recurring focus block, and office/remote pattern. Say that it contains no home address, live location, or private events.
 
-Use this request in the browser agent:
+## 0:15–0:50 — Meeting planning and WebMCP scheduling
 
-> Find a 45-minute launch review next week with Maya and Sam. Avoid focus blocks, prefer Maya’s afternoon, and leave travel time.
+Click **New event**. Show the title, meeting length, attendee checkboxes with designated offices, the two office locations, and the date choices. Use a target date with flexibility or choose **Have meeting by**, then click **Find availability**.
 
-Show the browser’s WebMCP tool activity. Call out that MyCP invokes structured `get_calendar_context`, `find_availability`, and `propose_schedule` tools instead of DOM automation. Open a candidate and briefly show its ranked reasons and warnings.
+Use this request in the browser agent to show the equivalent structured interaction:
+
+> Find a 45-minute launch review with Maya and Sam at New York HQ by Friday. Avoid focus blocks and show any office-travel trade-offs.
+
+Show the browser’s WebMCP tool activity. Call out that MyCP invokes structured `get_calendar_context`, `get_user_scheduling_profile`, `find_availability`, and `propose_schedule` tools instead of DOM automation. Open a candidate and briefly show its ranked reasons and office-travel warning.
 
 ## 0:50–1:20 — Draft, not a hidden write
 
@@ -30,7 +34,7 @@ Open the draft and click **Review & confirm**. Pause on the modal and show the e
 
 > The WebMCP `commit_event` tool is deliberately blocked. Only this visible human confirmation can add the event, and the API requires a one-time confirmation plus an idempotency key.
 
-Click **Confirm & add event**, then show the new calendar block and audit entry.
+Click **Confirm & add event**, then show the new calendar block and audit entry. The demo deliberately stops there: it displays invitees but does not send email or provider invitations.
 
 ## 1:45–2:00 — Why WebMCP
 

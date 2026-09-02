@@ -5,6 +5,7 @@ describe("calendar WebMCP tools", () => {
   it("exposes the complete scoped calendar tool set", () => {
     expect(calendarTools.map((tool) => tool.name)).toEqual([
       "get_calendar_context",
+      "get_user_scheduling_profile",
       "find_availability",
       "propose_schedule",
       "get_event_details",
@@ -16,6 +17,7 @@ describe("calendar WebMCP tools", () => {
     ]);
     expect(calendarTools.filter((tool) => tool.annotations?.readOnlyHint).map((tool) => tool.name)).toEqual([
       "get_calendar_context",
+      "get_user_scheduling_profile",
       "find_availability",
       "propose_schedule",
       "get_event_details",
@@ -39,7 +41,7 @@ describe("calendar WebMCP tools", () => {
     const dispose = await registerCalendarTools();
     dispose();
 
-    expect(registered).toHaveLength(9);
+    expect(registered).toHaveLength(10);
     delete (globalThis as { document?: unknown }).document;
   });
 

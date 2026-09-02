@@ -1,4 +1,4 @@
-import type { CalendarEvent, EventDraft, ScheduleCandidate } from "../domain/contracts";
+import type { CalendarEvent, EventDraft, ScheduleCandidate, SchedulingProfile } from "../domain/contracts";
 import type { CalendarState } from "../domain/calendar-store";
 
 export type ToolActivity = Readonly<{
@@ -91,6 +91,18 @@ function compactCandidates(candidates: ScheduleCandidate[]) {
   }));
 }
 
+function compactSchedulingProfile(profile: SchedulingProfile, include: string[] | undefined) {
+  const requested = new Set(include ?? ["meeting_preferences", "work_pattern", "recurring_focus_blocks"]);
+  return {
+    userId: profile.personId,
+    profileRevision: profile.revision,
+    defaultOfficeId: profile.defaultOfficeId,
+    ...(requested.has("meeting_preferences") ? { meetingPreferences: profile.meetingPreferences } : {}),
+    ...(requested.has("work_pattern") ? { weeklyWorkPattern: profile.weeklyWorkPattern } : {}),
+    ...(requested.has("recurring_focus_blocks") ? { recurringFocusBlocks: profile.recurringFocusBlocks } : {})
+  };
+}
+
 async function api<T>(url: string, init?: RequestInit, signal?: AbortSignal): Promise<T> {
   const response = await fetch(url, {
     ...init,
@@ -132,6 +144,7 @@ async function runTool(
 const timeRangeProperties = {
   attendeeIds: { type: "array", items: { type: "string" }, minItems: 1, maxItems: 10 },
   durationMinutes: { type: "integer", minimum: 15, maximum: 120, multipleOf: 15 },
+  officeId: { type: "string", enum: ["new-york-hq", "san-francisco-studio"], description: "Optional meeting office. Travel feedback uses the demo's fixed office assignments and route time." },
   rangeStartsAt: { type: "string", format: "date-time" },
   rangeEndsAt: { type: "string", format: "date-time" }
 };
@@ -152,7 +165,7 @@ export const calendarTools: WebMCP.ModelContextTool[] = [
   {
     name: "get_calendar_context",
     title: "Get calendar context",
-    description: "Read the active user's calendar identities, up to three pending drafts, and a count of visible events. It never returns a full event list.",
+    description: "Read the active user's calendar identities, bounded team-member IDs and display names, up to three pending drafts, and a count of visible events. It never returns a full event list or scheduling-profile details.",
     inputSchema: schema({}),
     annotations: { readOnlyHint: true, untrustedContentHint: true },
     execute: async () => runTool("get_calendar_context", "read", async () => {
@@ -160,15 +173,35 @@ export const calendarTools: WebMCP.ModelContextTool[] = [
       return {
         activeUserId: state.activeUserId,
         calendars: state.calendars.map((calendar) => ({ id: calendar.id, name: clip(calendar.name, 80), timeZone: calendar.timeZone })),
+        teamMembers: state.people.map((person) => ({ id: person.id, displayName: clip(person.displayName, 80) })),
         pendingDrafts: state.drafts.slice(0, 3).map(compactDraft),
         visibleEventCount: state.events.length
       };
     }, {})
   },
   {
+    name: "get_user_scheduling_profile",
+    title: "Get user scheduling profile",
+    description: "Read a bounded scheduling-only profile for one visible team member. It can return meeting preferences, weekly office/remote pattern, and recurring focus blocks; it never returns a home address, live location, or private calendar events.",
+    inputSchema: schema({
+      userId: { type: "string", description: "A team-member ID from get_calendar_context." },
+      include: { type: "array", items: { type: "string", enum: ["meeting_preferences", "work_pattern", "recurring_focus_blocks"] }, minItems: 1, maxItems: 3, description: "Optional bounded set of profile sections. Omit to return all scheduling sections." }
+    }, ["userId"]),
+    annotations: { readOnlyHint: true, untrustedContentHint: true },
+    execute: async (input, { signal }) => runTool("get_user_scheduling_profile", "read", async () => {
+      if (typeof input.userId !== "string" || !input.userId) throw new Error("A team-member userId is required.");
+      const include = Array.isArray(input.include) && input.include.every((section) => typeof section === "string")
+        ? input.include.filter((section) => ["meeting_preferences", "work_pattern", "recurring_focus_blocks"].includes(section))
+        : undefined;
+      if (Array.isArray(input.include) && include?.length !== input.include.length) throw new Error("One or more requested profile sections are not allowed.");
+      const response = await api<{ profile: SchedulingProfile }>("/api/team-members/" + encodeURIComponent(input.userId) + "/scheduling-profile", undefined, signal);
+      return { profile: compactSchedulingProfile(response.profile, include) };
+    }, input)
+  },
+  {
     name: "find_availability",
     title: "Find availability",
-    description: "Find free candidate slots for named attendee IDs within a supplied range. Returns free/busy-derived candidates only, never private event details.",
+    description: "Find free candidate slots for named attendee IDs within a supplied range. Optionally include a meeting office to receive fixed travel feedback. Returns free/busy-derived candidates only, never private event details.",
     inputSchema: schema(timeRangeProperties, ["attendeeIds", "durationMinutes", "rangeStartsAt", "rangeEndsAt"]),
     annotations: { readOnlyHint: true, untrustedContentHint: true },
     execute: async (input, { signal }) => runTool("find_availability", "read", async () => {
@@ -179,7 +212,7 @@ export const calendarTools: WebMCP.ModelContextTool[] = [
   {
     name: "propose_schedule",
     title: "Propose a schedule",
-    description: "Rank feasible slots using working hours, focus blocks, travel buffers, and stated time-of-day preferences. This does not create or change events.",
+    description: "Rank feasible slots using working hours, focus blocks, travel buffers, fixed office travel feedback, and stated time-of-day preferences. This does not create or change events.",
     inputSchema: schema(timeRangeProperties, ["attendeeIds", "durationMinutes", "rangeStartsAt", "rangeEndsAt"]),
     annotations: { readOnlyHint: true, untrustedContentHint: true },
     execute: async (input, { signal }) => runTool("propose_schedule", "read", async () => {

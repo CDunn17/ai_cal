@@ -8,14 +8,17 @@ import {
   draftCommitConfirmationSchema,
   eventDraftSchema,
   scheduleRequestSchema,
+  schedulingProfileSchema,
   updateEventInputSchema,
   type AuditEntry,
   type CalendarEvent,
   type CommitReceipt,
   type DemoData,
   type DraftCommitConfirmation,
-  type EventDraft
+  type EventDraft,
+  type SchedulingProfile
 } from "./contracts";
+import { initialSchedulingProfiles } from "./scheduling-profiles";
 import { proposeSchedule } from "./scheduling";
 
 export class CalendarStoreError extends Error {
@@ -30,6 +33,7 @@ export class CalendarStoreError extends Error {
 export type CalendarState = Readonly<{
   activeUserId: string;
   people: DemoData["people"];
+  schedulingProfiles: SchedulingProfile[];
   calendars: DemoData["calendars"];
   events: CalendarEvent[];
   drafts: EventDraft[];
@@ -65,6 +69,7 @@ function projectEvent(event: CalendarEvent, activeUserId: string, calendarOwnerI
 
 export class CalendarStore {
   private readonly people;
+  private readonly schedulingProfiles;
   private readonly calendars;
   private readonly events = new Map<string, CalendarEvent>();
   private readonly drafts = new Map<string, EventDraft>();
@@ -75,6 +80,7 @@ export class CalendarStore {
 
   constructor(seed: DemoData) {
     this.people = seed.people;
+    this.schedulingProfiles = (seed.schedulingProfiles ?? initialSchedulingProfiles).map((profile) => schedulingProfileSchema.parse(profile));
     this.calendars = seed.calendars;
     for (const event of seed.events) {
       this.events.set(event.id, event);
@@ -105,6 +111,7 @@ export class CalendarStore {
     return {
       data: {
         people: this.people,
+        schedulingProfiles: this.schedulingProfiles,
         calendars: this.calendars,
         events: [...this.events.values()]
       },
@@ -122,6 +129,7 @@ export class CalendarStore {
     return {
       activeUserId,
       people: this.people,
+      schedulingProfiles: this.schedulingProfiles,
       calendars: this.calendars,
       events: [...this.events.values()].map((event) => {
         const calendar = this.getCalendar(event.calendarId);
@@ -137,10 +145,18 @@ export class CalendarStore {
     const request = scheduleRequestSchema.parse(input);
     this.assertKnownAttendees(request.attendeeIds);
     try {
-      return proposeSchedule([...this.events.values()], this.people, activeUserId, request);
+      return proposeSchedule([...this.events.values()], this.people, this.schedulingProfiles, activeUserId, request);
     } catch (error) {
       throw new CalendarStoreError(400, error instanceof Error ? error.message : "Could not produce scheduling options.");
     }
+  }
+
+  schedulingProfileFor(activeUserId: string, personId: string): SchedulingProfile {
+    this.assertUser(activeUserId);
+    this.assertUser(personId);
+    const profile = this.schedulingProfiles.find((candidate) => candidate.personId === personId);
+    if (!profile) throw new CalendarStoreError(404, "Scheduling profile not found.");
+    return profile;
   }
 
   create(activeUserId: string, input: unknown): CalendarEvent {

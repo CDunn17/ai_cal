@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type CSSProperties, type FormEvent } from "react";
-import type { CalendarEvent, DraftCommitConfirmation, EventDraft, ScheduleCandidate } from "./domain/contracts";
+import type { CalendarEvent, DraftCommitConfirmation, EventDraft, ScheduleCandidate, SchedulingProfile } from "./domain/contracts";
 import type { CalendarState } from "./domain/calendar-store";
+import { formatTravelMinutes, officeById, OFFICES, type OfficeId } from "./domain/offices";
 import { ACTIVITY_EVENT, registerCalendarTools, STATE_CHANGED_EVENT, type ToolActivity } from "./webmcp/calendar-tools";
 
 const DISPLAY_TIME_ZONE = "America/New_York";
@@ -22,6 +23,32 @@ type EventForm = {
   visibility: CalendarEvent["visibility"];
   attendeeIds: string[];
 };
+
+type MeetingPlannerForm = {
+  title: string;
+  durationMinutes: number;
+  attendeeIds: string[];
+  officeId: OfficeId;
+  dateMode: "target" | "deadline";
+  targetDate: string;
+  flexDays: number;
+  deadlineDate: string;
+};
+
+const PLANNING_START_DATE = "2026-09-07";
+
+function newMeetingPlannerForm(): MeetingPlannerForm {
+  return {
+    title: "",
+    durationMinutes: 45,
+    attendeeIds: ["maya", "sam"],
+    officeId: "new-york-hq",
+    dateMode: "target",
+    targetDate: "2026-09-10",
+    flexDays: 2,
+    deadlineDate: "2026-09-11"
+  };
+}
 
 function localParts(instant: string): Record<string, string> {
   return Object.fromEntries(
@@ -73,6 +100,35 @@ function zonedInputToIso(value: string): string {
   return new Date(assumedUtc - offsetMinutes * 60_000).toISOString();
 }
 
+function addDays(date: string, days: number): string {
+  const value = new Date(date + "T12:00:00.000Z");
+  value.setUTCDate(value.getUTCDate() + days);
+  return value.toISOString().slice(0, 10);
+}
+
+function dateRangeForPlan(plan: MeetingPlannerForm): { rangeStartsAt: string; rangeEndsAt: string } {
+  const firstDate = plan.dateMode === "target" ? addDays(plan.targetDate, -plan.flexDays) : PLANNING_START_DATE;
+  const lastDate = plan.dateMode === "target" ? addDays(plan.targetDate, plan.flexDays) : plan.deadlineDate;
+  return {
+    rangeStartsAt: zonedInputToIso(firstDate + "T00:00"),
+    rangeEndsAt: zonedInputToIso(addDays(lastDate, 1) + "T00:00")
+  };
+}
+
+function dateConstraintLabel(plan: MeetingPlannerForm): string {
+  if (plan.dateMode === "deadline") return "Held by " + plan.deadlineDate;
+  if (plan.flexDays === 0) return "On " + plan.targetDate;
+  return "Around " + plan.targetDate + " ± " + plan.flexDays + " day" + (plan.flexDays === 1 ? "" : "s");
+}
+
+function weekdayLabel(weekday: string): string {
+  return weekday.slice(0, 1).toUpperCase() + weekday.slice(1);
+}
+
+function workPatternLabel(entry: SchedulingProfile["weeklyWorkPattern"][number]): string {
+  return entry.mode === "remote" ? "Working from home" : "In office at " + officeById(entry.officeId ?? "new-york-hq").name;
+}
+
 function eventLayout(event: CalendarEvent) {
   const parts = localParts(event.startsAt);
   const endParts = localParts(event.endsAt);
@@ -121,12 +177,16 @@ export function App() {
   const [state, setState] = useState<CalendarState | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
+  const [selectedProfileUserId, setSelectedProfileUserId] = useState<string | null>(null);
   const [form, setForm] = useState<EventForm | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [meetingPlanner, setMeetingPlanner] = useState<MeetingPlannerForm | null>(null);
+  const [plannerError, setPlannerError] = useState<string | null>(null);
   const [proposals, setProposals] = useState<ScheduleCandidate[] | null>(null);
+  const [plannedMeeting, setPlannedMeeting] = useState<MeetingPlannerForm | null>(null);
   const [proposalError, setProposalError] = useState<string | null>(null);
-  const [isFindingTime, setIsFindingTime] = useState(false);
+  const [isFindingAvailability, setIsFindingAvailability] = useState(false);
   const [selectedDraftId, setSelectedDraftId] = useState<string | null>(null);
   const [commitConfirmation, setCommitConfirmation] = useState<DraftCommitConfirmation | null>(null);
   const [commitError, setCommitError] = useState<string | null>(null);
@@ -189,43 +249,62 @@ export function App() {
   const activeCalendar = state?.calendars.find((calendar) => calendar.ownerId === state.activeUserId);
   const selectedDraft = state?.drafts.find((draft) => draft.id === selectedDraftId) ?? null;
   const calendarColors = new Map(state?.calendars.map((calendar) => [calendar.id, calendar.color]));
+  const profilesByPersonId = useMemo(() => new Map(state?.schedulingProfiles.map((profile) => [profile.personId, profile])), [state]);
+  const selectedProfile = selectedProfileUserId ? profilesByPersonId.get(selectedProfileUserId) ?? null : null;
+  const selectedProfilePerson = selectedProfileUserId ? state?.people.find((person) => person.id === selectedProfileUserId) ?? null : null;
+  const profileOfficeName = (personId: string) => officeById(profilesByPersonId.get(personId)?.defaultOfficeId ?? "new-york-hq").name;
 
-  const findTime = async () => {
-    setIsFindingTime(true);
-    setProposalError(null);
+  const findAvailability = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!meetingPlanner) return;
+    if (!meetingPlanner.title.trim()) {
+      setPlannerError("Add a meeting title before finding availability.");
+      return;
+    }
+    if (meetingPlanner.attendeeIds.length === 0) {
+      setPlannerError("Choose at least one attendee for a meeting.");
+      return;
+    }
+    setIsFindingAvailability(true);
+    setPlannerError(null);
     try {
+      const range = dateRangeForPlan(meetingPlanner);
       const response = await request<{ proposals: ScheduleCandidate[] }>("/api/proposals", {
         method: "POST",
         body: JSON.stringify({
-          attendeeIds: ["maya", "sam"],
-          durationMinutes: 45,
-          rangeStartsAt: "2026-09-07T12:00:00.000Z",
-          rangeEndsAt: "2026-09-12T00:00:00.000Z"
+          attendeeIds: meetingPlanner.attendeeIds,
+          durationMinutes: meetingPlanner.durationMinutes,
+          officeId: meetingPlanner.officeId,
+          ...range
         })
       });
+      setPlannedMeeting({ ...meetingPlanner, title: meetingPlanner.title.trim() });
       setProposals(response.proposals);
+      setMeetingPlanner(null);
     } catch (error) {
-      setProposalError(error instanceof Error ? error.message : "Could not find scheduling options.");
+      setPlannerError(error instanceof Error ? error.message : "Could not find scheduling options.");
     } finally {
-      setIsFindingTime(false);
+      setIsFindingAvailability(false);
     }
   };
 
   const createDraftFromProposal = async (proposal: ScheduleCandidate) => {
-    if (!activeCalendar) return;
+    if (!activeCalendar || !plannedMeeting) return;
     setProposalError(null);
     try {
+      const office = officeById(plannedMeeting.officeId);
       const response = await request<{ draft: EventDraft }>("/api/event-drafts", {
         method: "POST",
         body: JSON.stringify({
           calendarId: activeCalendar.id,
-          title: "Launch review",
+          title: plannedMeeting.title,
           startsAt: proposal.startsAt,
           endsAt: proposal.endsAt,
           timeZone: DISPLAY_TIME_ZONE,
           visibility: "public",
-          attendeeIds: ["maya", "sam"],
-          agenda: "Review launch readiness, risks, and owners."
+          attendeeIds: plannedMeeting.attendeeIds,
+          location: office.name,
+          agenda: "Planned for " + office.name + ". Travel feedback uses the demo's fixed office assignments."
         })
       });
       setSelectedDraftId(response.draft.id);
@@ -354,14 +433,14 @@ export function App() {
       <header className="calendar-header">
         <div className="brand"><span className="brand-mark">M</span><strong>MyCP</strong></div>
         <div className="week-controls"><button type="button" className="icon-button" aria-label="Previous week">‹</button><strong>September 2026</strong><button type="button" className="icon-button" aria-label="Next week">›</button></div>
-        <div className="header-actions"><span className="timezone-label">{DISPLAY_TIME_ZONE.replace("_", " ")}</span><button type="button" className="secondary-button" disabled={isFindingTime} onClick={() => void findTime()}>{isFindingTime ? "Finding…" : "Find time"}</button><button type="button" className="primary-button" onClick={() => setForm(toEventForm())}>New event</button></div>
+        <div className="header-actions"><span className="timezone-label">{DISPLAY_TIME_ZONE.replace("_", " ")}</span><button type="button" className="primary-button" onClick={() => { setPlannerError(null); setMeetingPlanner(newMeetingPlannerForm()); }}>New event</button></div>
       </header>
 
       {loadError && <p className="error-banner" role="alert">{loadError}</p>}
 
-      {(proposals || proposalError) && (
+      {(proposals || proposalError) && plannedMeeting && (
         <section className="proposal-panel" aria-labelledby="proposal-title">
-          <div className="proposal-heading"><div><p className="eyebrow">Scheduling assistant</p><h2 id="proposal-title">Launch review · 45 minutes</h2><p>Options use working hours, protected focus time, busy blocks, and travel buffers.</p></div><button type="button" className="close-button" aria-label="Close scheduling options" onClick={() => { setProposals(null); setProposalError(null); }}>×</button></div>
+          <div className="proposal-heading"><div><p className="eyebrow">Scheduling assistant</p><h2 id="proposal-title">{plannedMeeting.title} · {plannedMeeting.durationMinutes} minutes</h2><p>{officeById(plannedMeeting.officeId).name} · {dateConstraintLabel(plannedMeeting)}. Options use working hours, protected focus time, busy blocks, and travel buffers.</p></div><button type="button" className="close-button" aria-label="Close scheduling options" onClick={() => { setProposals(null); setPlannedMeeting(null); setProposalError(null); }}>×</button></div>
           {proposalError && <p className="form-error" role="alert">{proposalError}</p>}
           {proposals?.length === 0 && <p className="muted">No slot met the current constraints. Adjust the time range or attendees.</p>}
           {proposals && proposals.length > 0 && <div className="proposal-grid">{proposals.map((proposal) => <article className="proposal-card" key={proposal.startsAt}><div><p className="proposal-time">{timeLabel(proposal.startsAt)}–{timeLabel(proposal.endsAt)}</p><strong>{new Intl.DateTimeFormat("en-US", { timeZone: DISPLAY_TIME_ZONE, weekday: "long", month: "short", day: "numeric" }).format(new Date(proposal.startsAt))}</strong></div><p className="proposal-score">Score {proposal.score}</p><ul>{proposal.reasons.slice(0, 2).map((reason) => <li key={reason}>{reason}</li>)}</ul>{proposal.warnings.length > 0 && <p className="proposal-warning">{proposal.warnings[0]}</p>}<button type="button" className="secondary-button" onClick={() => void createDraftFromProposal(proposal)}>Create draft</button></article>)}</div>}
@@ -379,6 +458,12 @@ export function App() {
                   <span>{calendar.name}</span>
                 </div>
               ))}
+            </div>
+          </section>
+          <section className="team-section">
+            <p className="eyebrow">Team</p>
+            <div className="team-list">
+              {state.people.map((person) => <button type="button" className="team-member-card" key={person.id} onClick={() => setSelectedProfileUserId(person.id)}><span className="team-avatar">{person.displayName.slice(0, 1)}</span><span><strong>{person.displayName}{person.id === state.activeUserId ? " (you)" : ""}</strong><small>Scheduling profile · {profileOfficeName(person.id)}</small></span></button>)}
             </div>
           </section>
           <section className="free-busy-note">
@@ -489,6 +574,43 @@ export function App() {
             </>
           )}
         </aside>
+      )}
+
+      {selectedProfile && selectedProfilePerson && (
+        <aside className="event-details profile-details" aria-label="Team member scheduling profile">
+          <button className="close-button" type="button" aria-label="Close scheduling profile" onClick={() => setSelectedProfileUserId(null)}>×</button>
+          <p className="eyebrow">Team scheduling profile</p>
+          <h2>{selectedProfilePerson.displayName}</h2>
+          <p>Profile revision {selectedProfile.revision} · scheduling-only details</p>
+          <dl>
+            <div><dt>Preferred meeting time</dt><dd>{selectedProfile.meetingPreferences.preferredMeetingWindow === "any" ? "No preference" : selectedProfile.meetingPreferences.preferredMeetingWindow}</dd></div>
+            <div><dt>Default office</dt><dd>{officeById(selectedProfile.defaultOfficeId).name}</dd></div>
+            <div><dt>Travel buffer</dt><dd>{selectedProfile.meetingPreferences.travelBufferMinutes} minutes around existing events</dd></div>
+          </dl>
+          <section className="profile-block"><p className="eyebrow">Typical week</p><ul className="profile-work-pattern">{selectedProfile.weeklyWorkPattern.map((entry) => <li key={entry.weekday}><strong>{weekdayLabel(entry.weekday)}</strong><span>{workPatternLabel(entry)}</span></li>)}</ul></section>
+          <section className="profile-block"><p className="eyebrow">Recurring focus time</p>{selectedProfile.recurringFocusBlocks.length === 0 ? <p className="muted">No recurring focus blocks shared.</p> : <ul className="profile-focus-list">{selectedProfile.recurringFocusBlocks.map((block) => <li key={block.weekday + block.start}>{weekdayLabel(block.weekday)} · {block.start}–{block.end}</li>)}</ul>}</section>
+          <p className="profile-privacy-note">This profile intentionally excludes home address, live location, and private calendar-event details.</p>
+        </aside>
+      )}
+
+      {meetingPlanner && (
+        <div className="modal-backdrop" role="presentation">
+          <form className="event-form meeting-planner" onSubmit={findAvailability}>
+            <div className="form-header"><div><p className="eyebrow">New event</p><h2>Plan a meeting</h2><p className="planner-intro">MyCP will propose times; choosing one creates a reviewable draft, never a committed event.</p></div><button type="button" className="close-button" onClick={() => setMeetingPlanner(null)} aria-label="Close meeting planner">×</button></div>
+            <label>Title<input autoFocus required maxLength={140} value={meetingPlanner.title} onChange={(event) => setMeetingPlanner({ ...meetingPlanner, title: event.target.value })} /></label>
+            <label>Length of meeting<select value={meetingPlanner.durationMinutes} onChange={(event) => setMeetingPlanner({ ...meetingPlanner, durationMinutes: Number(event.target.value) })}><option value={15}>15 minutes</option><option value={30}>30 minutes</option><option value={45}>45 minutes</option><option value={60}>1 hour</option><option value={90}>1 hour 30 minutes</option><option value={120}>2 hours</option></select></label>
+            <fieldset><legend>Attendees</legend><p className="field-hint">You ({state.people.find((person) => person.id === state.activeUserId)?.displayName}) are included automatically · designated office: {profileOfficeName(state.activeUserId)}.</p>{state.people.filter((person) => person.id !== state.activeUserId).map((person) => <label className="check-row attendee-row" key={person.id}><input type="checkbox" checked={meetingPlanner.attendeeIds.includes(person.id)} onChange={(event) => setMeetingPlanner({ ...meetingPlanner, attendeeIds: event.target.checked ? [...meetingPlanner.attendeeIds, person.id] : meetingPlanner.attendeeIds.filter((id) => id !== person.id) })} /><span>{person.displayName}<small>Designated office: {profileOfficeName(person.id)}</small></span></label>)}</fieldset>
+            <label>Office<select value={meetingPlanner.officeId} onChange={(event) => setMeetingPlanner({ ...meetingPlanner, officeId: event.target.value as OfficeId })}>{OFFICES.map((office) => <option value={office.id} key={office.id}>{office.name}</option>)}</select></label>
+            <p className="office-note">The two demo offices are {formatTravelMinutes(OFFICES[0].travelMinutesToOtherOffice)} apart. Proposal feedback calls out anyone travelling from their designated office.</p>
+            <fieldset><legend>Date</legend><label className="radio-row"><input type="radio" name="date-mode" checked={meetingPlanner.dateMode === "target"} onChange={() => setMeetingPlanner({ ...meetingPlanner, dateMode: "target" })} /><span>Target date</span></label>
+              {meetingPlanner.dateMode === "target" && <div className="form-row date-row"><label>Date<input required type="date" min={PLANNING_START_DATE} value={meetingPlanner.targetDate} onChange={(event) => setMeetingPlanner({ ...meetingPlanner, targetDate: event.target.value })} /></label><label>Flexibility<select value={meetingPlanner.flexDays} onChange={(event) => setMeetingPlanner({ ...meetingPlanner, flexDays: Number(event.target.value) })}><option value={0}>Exact date</option><option value={1}>± 1 day</option><option value={2}>± 2 days</option><option value={3}>± 3 days</option><option value={5}>± 5 days</option></select></label></div>}
+              <label className="radio-row"><input type="radio" name="date-mode" checked={meetingPlanner.dateMode === "deadline"} onChange={() => setMeetingPlanner({ ...meetingPlanner, dateMode: "deadline" })} /><span>Have meeting by</span></label>
+              {meetingPlanner.dateMode === "deadline" && <label>Deadline<input required type="date" min={PLANNING_START_DATE} value={meetingPlanner.deadlineDate} onChange={(event) => setMeetingPlanner({ ...meetingPlanner, deadlineDate: event.target.value })} /></label>}
+            </fieldset>
+            {plannerError && <p className="form-error" role="alert">{plannerError}</p>}
+            <div className="form-actions"><button type="button" onClick={() => setMeetingPlanner(null)}>Cancel</button><button className="primary-button" disabled={isFindingAvailability} type="submit">{isFindingAvailability ? "Finding availability…" : "Find availability"}</button></div>
+          </form>
+        </div>
       )}
 
       {form && (
