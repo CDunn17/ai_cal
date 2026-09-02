@@ -150,6 +150,8 @@ legend { padding: 0 4px; color: #625a70; font-size: .78rem; font-weight: 750; }
 .proposal-heading { position: relative; display: flex; justify-content: space-between; gap: 18px; }
 .proposal-heading h2 { margin: 0 0 5px; }
 .proposal-heading p:not(.eyebrow) { margin: 0; color: #716a7b; font-size: .84rem; }
+.proposal-actions { display: flex; align-items: flex-start; gap: 5px; }
+.proposal-actions .secondary-button { white-space: nowrap; }
 .proposal-heading .close-button { position: static; flex: 0 0 auto; }
 .proposal-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 18px; }
 .proposal-card { display: flex; flex-direction: column; gap: 10px; min-height: 234px; padding: 17px; border: 1px solid #e4dff1; border-radius: 12px; background: #fff; }

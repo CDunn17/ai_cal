@@ -20,6 +20,7 @@ import {
 } from "./contracts";
 import { initialSchedulingProfiles } from "./scheduling-profiles";
 import { demoData } from "./seed";
+import { migrateOfficeId } from "./offices";
 import { proposeSchedule } from "./scheduling";
 
 export class CalendarStoreError extends Error {
@@ -68,6 +69,29 @@ function projectEvent(event: CalendarEvent, activeUserId: string, calendarOwnerI
   };
 }
 
+function migratePersistedOfficeIds(data: unknown): unknown {
+  if (!data || typeof data !== "object" || !Array.isArray((data as { schedulingProfiles?: unknown }).schedulingProfiles)) return data;
+  const stored = data as { schedulingProfiles: unknown[] } & Record<string, unknown>;
+  return {
+    ...stored,
+    schedulingProfiles: stored.schedulingProfiles.map((profile) => {
+      if (!profile || typeof profile !== "object") return profile;
+      const candidate = profile as { defaultOfficeId?: unknown; weeklyWorkPattern?: unknown } & Record<string, unknown>;
+      return {
+        ...candidate,
+        defaultOfficeId: migrateOfficeId(candidate.defaultOfficeId),
+        weeklyWorkPattern: Array.isArray(candidate.weeklyWorkPattern)
+          ? candidate.weeklyWorkPattern.map((workday) => {
+              if (!workday || typeof workday !== "object") return workday;
+              const day = workday as { officeId?: unknown } & Record<string, unknown>;
+              return { ...day, officeId: migrateOfficeId(day.officeId) };
+            })
+          : candidate.weeklyWorkPattern
+      };
+    })
+  };
+}
+
 export class CalendarStore {
   private readonly people;
   private readonly schedulingProfiles;
@@ -89,7 +113,7 @@ export class CalendarStore {
   }
 
   static fromSnapshot(snapshot: CalendarStoreSnapshot): CalendarStore {
-    const store = new CalendarStore(demoDataSchema.parse(snapshot.data));
+    const store = new CalendarStore(demoDataSchema.parse(migratePersistedOfficeIds(snapshot.data)));
     for (const event of demoData.events) {
       if (!store.events.has(event.id)) store.events.set(event.id, event);
     }

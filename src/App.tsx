@@ -42,7 +42,7 @@ function newMeetingPlannerForm(): MeetingPlannerForm {
     title: "",
     durationMinutes: 45,
     attendeeIds: ["maya", "sam"],
-    officeId: "new-york-hq",
+    officeId: "downtown-manhattan",
     dateMode: "target",
     targetDate: "2026-09-10",
     flexDays: 2,
@@ -126,7 +126,7 @@ function weekdayLabel(weekday: string): string {
 }
 
 function workPatternLabel(entry: SchedulingProfile["weeklyWorkPattern"][number]): string {
-  return entry.mode === "remote" ? "Working from home" : "In office at " + officeById(entry.officeId ?? "new-york-hq").name;
+  return entry.mode === "remote" ? "Working from home" : "In office at " + officeById(entry.officeId ?? "downtown-manhattan").name;
 }
 
 function eventOwnerLabel(ownerName: string): string {
@@ -258,7 +258,7 @@ export function App() {
   const profilesByPersonId = useMemo(() => new Map(state?.schedulingProfiles.map((profile) => [profile.personId, profile])), [state]);
   const selectedProfile = selectedProfileUserId ? profilesByPersonId.get(selectedProfileUserId) ?? null : null;
   const selectedProfilePerson = selectedProfileUserId ? state?.people.find((person) => person.id === selectedProfileUserId) ?? null : null;
-  const profileOfficeName = (personId: string) => officeById(profilesByPersonId.get(personId)?.defaultOfficeId ?? "new-york-hq").name;
+  const profileOfficeName = (personId: string) => officeById(profilesByPersonId.get(personId)?.defaultOfficeId ?? "downtown-manhattan").name;
 
   const findAvailability = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -318,6 +318,14 @@ export function App() {
     } catch (error) {
       setProposalError(error instanceof Error ? error.message : "Could not create the draft.");
     }
+  };
+
+  const revisePlannedMeeting = () => {
+    if (!plannedMeeting) return;
+    setPlannerError(null);
+    setProposalError(null);
+    setProposals(null);
+    setMeetingPlanner({ ...plannedMeeting });
   };
 
   const discardDraft = async (draft: EventDraft) => {
@@ -446,7 +454,7 @@ export function App() {
 
       {(proposals || proposalError) && plannedMeeting && (
         <section className="proposal-panel" aria-labelledby="proposal-title">
-          <div className="proposal-heading"><div><p className="eyebrow">Scheduling assistant</p><h2 id="proposal-title">{plannedMeeting.title} · {plannedMeeting.durationMinutes} minutes</h2><p>{officeById(plannedMeeting.officeId).name} · {dateConstraintLabel(plannedMeeting)}. Options use working hours, protected focus time, busy blocks, and travel buffers.</p></div><button type="button" className="close-button" aria-label="Close scheduling options" onClick={() => { setProposals(null); setPlannedMeeting(null); setProposalError(null); }}>×</button></div>
+          <div className="proposal-heading"><div><p className="eyebrow">Scheduling assistant</p><h2 id="proposal-title">{plannedMeeting.title} · {plannedMeeting.durationMinutes} minutes</h2><p>{officeById(plannedMeeting.officeId).name} · {dateConstraintLabel(plannedMeeting)}. Options use working hours, protected focus time, busy blocks, and travel buffers.</p></div><div className="proposal-actions"><button type="button" className="secondary-button" onClick={revisePlannedMeeting}>Revise event</button><button type="button" className="close-button" aria-label="Close scheduling options" onClick={() => { setProposals(null); setPlannedMeeting(null); setProposalError(null); }}>×</button></div></div>
           {proposalError && <p className="form-error" role="alert">{proposalError}</p>}
           {proposals?.length === 0 && <p className="muted">No slot met the current constraints. Adjust the time range or attendees.</p>}
           {proposals && proposals.length > 0 && <div className="proposal-grid">{proposals.map((proposal) => <article className="proposal-card" key={proposal.startsAt}><div><p className="proposal-time">{timeLabel(proposal.startsAt)}–{timeLabel(proposal.endsAt)}</p><strong>{new Intl.DateTimeFormat("en-US", { timeZone: DISPLAY_TIME_ZONE, weekday: "long", month: "short", day: "numeric" }).format(new Date(proposal.startsAt))}</strong></div><p className="proposal-score">Score {proposal.score}</p><ul>{proposal.reasons.slice(0, 2).map((reason) => <li key={reason}>{reason}</li>)}</ul>{proposal.warnings.length > 0 && <p className="proposal-warning">{proposal.warnings[0]}</p>}<button type="button" className="secondary-button" onClick={() => void createDraftFromProposal(proposal)}>Create draft</button></article>)}</div>}

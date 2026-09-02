@@ -4,27 +4,27 @@ export const initialSchedulingProfiles: SchedulingProfile[] = schedulingProfileS
   {
     personId: "maya",
     revision: 1,
-    defaultOfficeId: "san-francisco-studio",
+    defaultOfficeId: "newark-nj",
     meetingPreferences: { preferredMeetingWindow: "afternoon", protectRecurringFocusTime: true, travelBufferMinutes: 15 },
     weeklyWorkPattern: [
-      { weekday: "monday", mode: "office", officeId: "san-francisco-studio" },
+      { weekday: "monday", mode: "office", officeId: "newark-nj" },
       { weekday: "tuesday", mode: "remote" },
-      { weekday: "wednesday", mode: "office", officeId: "san-francisco-studio" },
+      { weekday: "wednesday", mode: "office", officeId: "newark-nj" },
       { weekday: "thursday", mode: "remote" },
-      { weekday: "friday", mode: "office", officeId: "san-francisco-studio" }
+      { weekday: "friday", mode: "office", officeId: "newark-nj" }
     ],
     recurringFocusBlocks: [{ weekday: "wednesday", start: "10:00", end: "11:00" }]
   },
   {
     personId: "sam",
     revision: 1,
-    defaultOfficeId: "new-york-hq",
+    defaultOfficeId: "downtown-manhattan",
     meetingPreferences: { preferredMeetingWindow: "morning", protectRecurringFocusTime: true, travelBufferMinutes: 15 },
     weeklyWorkPattern: [
-      { weekday: "monday", mode: "office", officeId: "new-york-hq" },
-      { weekday: "tuesday", mode: "office", officeId: "new-york-hq" },
+      { weekday: "monday", mode: "office", officeId: "downtown-manhattan" },
+      { weekday: "tuesday", mode: "office", officeId: "downtown-manhattan" },
       { weekday: "wednesday", mode: "remote" },
-      { weekday: "thursday", mode: "office", officeId: "new-york-hq" },
+      { weekday: "thursday", mode: "office", officeId: "downtown-manhattan" },
       { weekday: "friday", mode: "remote" }
     ],
     recurringFocusBlocks: [{ weekday: "thursday", start: "15:00", end: "16:00" }]
@@ -32,13 +32,13 @@ export const initialSchedulingProfiles: SchedulingProfile[] = schedulingProfileS
   {
     personId: "alex",
     revision: 1,
-    defaultOfficeId: "new-york-hq",
+    defaultOfficeId: "downtown-manhattan",
     meetingPreferences: { preferredMeetingWindow: "any", protectRecurringFocusTime: true, travelBufferMinutes: 15 },
     weeklyWorkPattern: [
-      { weekday: "monday", mode: "office", officeId: "new-york-hq" },
-      { weekday: "tuesday", mode: "office", officeId: "new-york-hq" },
+      { weekday: "monday", mode: "office", officeId: "downtown-manhattan" },
+      { weekday: "tuesday", mode: "office", officeId: "downtown-manhattan" },
       { weekday: "wednesday", mode: "remote" },
-      { weekday: "thursday", mode: "office", officeId: "new-york-hq" },
+      { weekday: "thursday", mode: "office", officeId: "downtown-manhattan" },
       { weekday: "friday", mode: "remote" }
     ],
     recurringFocusBlocks: [{ weekday: "friday", start: "09:00", end: "10:00" }]

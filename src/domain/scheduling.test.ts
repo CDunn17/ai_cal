@@ -62,12 +62,12 @@ describe("scheduling foundations", () => {
     const proposals = proposeSchedule(demoData.events, demoData.people, demoData.schedulingProfiles ?? [], "alex", {
       attendeeIds: ["maya", "sam"],
       durationMinutes: 45,
-      officeId: "new-york-hq",
+      officeId: "downtown-manhattan",
       rangeStartsAt: "2026-09-08T12:00:00.000Z",
       rangeEndsAt: "2026-09-09T00:00:00.000Z"
     });
 
-    expect(proposals[0].reasons).toContain("Meeting at New York HQ.");
+    expect(proposals[0].reasons).toContain("Meeting at Downtown Manhattan.");
     expect(proposals[0].reasons).toContain("Maya Chen works remotely that day; no office commute is assumed.");
   });
 

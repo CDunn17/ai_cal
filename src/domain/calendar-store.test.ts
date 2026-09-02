@@ -18,7 +18,7 @@ describe("CalendarStore", () => {
     expect(profile).toMatchObject({
       personId: "maya",
       revision: 1,
-      defaultOfficeId: "san-francisco-studio",
+      defaultOfficeId: "newark-nj",
       meetingPreferences: { preferredMeetingWindow: "afternoon" }
     });
     expect(profile.recurringFocusBlocks).toContainEqual({ weekday: "wednesday", start: "10:00", end: "11:00" });
@@ -30,9 +30,32 @@ describe("CalendarStore", () => {
 
     expect(state.schedulingProfiles).toHaveLength(3);
     expect(state.schedulingProfiles.find((profile) => profile.personId === "maya")).toMatchObject({
-      defaultOfficeId: "san-francisco-studio",
+      defaultOfficeId: "newark-nj",
       recurringFocusBlocks: [{ weekday: "wednesday", start: "10:00", end: "11:00" }]
     });
+  });
+
+  it("migrates legacy office IDs in persisted scheduling profiles", () => {
+    const current = new CalendarStore(demoData).snapshot();
+    const legacySnapshot = {
+      ...current,
+      data: {
+        ...current.data,
+        schedulingProfiles: current.data.schedulingProfiles?.map((profile) => ({
+          ...profile,
+          defaultOfficeId: profile.defaultOfficeId === "downtown-manhattan" ? "new-york-hq" : "san-francisco-studio",
+          weeklyWorkPattern: profile.weeklyWorkPattern.map((workday) => ({
+            ...workday,
+            officeId: workday.officeId === "downtown-manhattan" ? "new-york-hq" : workday.officeId === "newark-nj" ? "san-francisco-studio" : undefined
+          }))
+        }))
+      }
+    } as unknown as Parameters<typeof CalendarStore.fromSnapshot>[0];
+
+    const state = CalendarStore.fromSnapshot(legacySnapshot).stateFor("alex");
+
+    expect(state.schedulingProfiles.find((profile) => profile.personId === "maya")?.defaultOfficeId).toBe("newark-nj");
+    expect(state.schedulingProfiles.find((profile) => profile.personId === "alex")?.defaultOfficeId).toBe("downtown-manhattan");
   });
 
   it("creates, updates, and audits an event on the active user's calendar", () => {

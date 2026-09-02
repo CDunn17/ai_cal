@@ -18,7 +18,7 @@ Click **New event**. Show the title, meeting length, attendee checkboxes with de
 
 Use this request in the browser agent to show the equivalent structured interaction:
 
-> Find a 45-minute launch review with Maya and Sam at New York HQ by Friday. Avoid focus blocks and show any office-travel trade-offs.
+> Find a 45-minute launch review with Maya and Sam at Downtown Manhattan by Friday. Avoid focus blocks and show any office-travel trade-offs.
 
 Show the browser’s WebMCP tool activity. Call out that MyCP invokes structured `get_calendar_context`, `get_user_scheduling_profile`, `find_availability`, and `propose_schedule` tools instead of DOM automation. Open a candidate and briefly show its ranked reasons and office-travel warning.
 

@@ -144,7 +144,7 @@ async function runTool(
 const timeRangeProperties = {
   attendeeIds: { type: "array", items: { type: "string" }, minItems: 1, maxItems: 10 },
   durationMinutes: { type: "integer", minimum: 15, maximum: 120, multipleOf: 15 },
-  officeId: { type: "string", enum: ["new-york-hq", "san-francisco-studio"], description: "Optional meeting office. Travel feedback uses the demo's fixed office assignments and route time." },
+  officeId: { type: "string", enum: ["downtown-manhattan", "newark-nj"], description: "Optional meeting office. Travel feedback uses the demo's fixed office assignments and route time." },
   rangeStartsAt: { type: "string", format: "date-time" },
   rangeEndsAt: { type: "string", format: "date-time" }
 };

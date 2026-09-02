@@ -1,4 +1,4 @@
-export const OFFICE_IDS = ["new-york-hq", "san-francisco-studio"] as const;
+export const OFFICE_IDS = ["downtown-manhattan", "newark-nj"] as const;
 
 export type OfficeId = (typeof OFFICE_IDS)[number];
 
@@ -9,14 +9,19 @@ export type Office = Readonly<{
 }>;
 
 export const OFFICES: readonly Office[] = [
-  { id: "new-york-hq", name: "New York HQ", travelMinutesToOtherOffice: 330 },
-  { id: "san-francisco-studio", name: "San Francisco Studio", travelMinutesToOtherOffice: 330 }
+  { id: "downtown-manhattan", name: "Downtown Manhattan", travelMinutesToOtherOffice: 35 },
+  { id: "newark-nj", name: "Newark, NJ", travelMinutesToOtherOffice: 35 }
 ];
 
 const designatedOfficeIds: Readonly<Record<string, OfficeId>> = {
-  alex: "new-york-hq",
-  sam: "new-york-hq",
-  maya: "san-francisco-studio"
+  alex: "downtown-manhattan",
+  sam: "downtown-manhattan",
+  maya: "newark-nj"
+};
+
+const legacyOfficeIds: Readonly<Record<string, OfficeId>> = {
+  "new-york-hq": "downtown-manhattan",
+  "san-francisco-studio": "newark-nj"
 };
 
 export function officeById(id: OfficeId): Office {
@@ -26,7 +31,11 @@ export function officeById(id: OfficeId): Office {
 }
 
 export function designatedOfficeFor(personId: string): Office {
-  return officeById(designatedOfficeIds[personId] ?? "new-york-hq");
+  return officeById(designatedOfficeIds[personId] ?? "downtown-manhattan");
+}
+
+export function migrateOfficeId(value: unknown): unknown {
+  return typeof value === "string" ? legacyOfficeIds[value] ?? value : value;
 }
 
 export function travelMinutesBetween(from: OfficeId, to: OfficeId): number {
