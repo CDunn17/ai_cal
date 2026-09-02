@@ -117,6 +117,23 @@ describe("CalendarStore", () => {
     expect(restored.stateFor("alex").auditEntries[0]).toMatchObject({ action: "drafted", targetId: draft.id });
   });
 
+  it("adds newly introduced fixed demo events to an older persisted snapshot once", () => {
+    const current = new CalendarStore(demoData).snapshot();
+    const legacySnapshot = {
+      ...current,
+      data: {
+        ...current.data,
+        events: current.data.events.filter((event) => event.id !== "sam-retrospective-fri")
+      }
+    };
+
+    const restored = CalendarStore.fromSnapshot(legacySnapshot);
+    const restoredEvents = restored.stateFor("alex").events.filter((event) => event.id === "sam-retrospective-fri");
+
+    expect(restoredEvents).toHaveLength(1);
+    expect(restoredEvents[0]).toMatchObject({ title: "Sprint retrospective", calendarId: "sam-main" });
+  });
+
   it("commits a draft only after a current human confirmation and makes retries idempotent", () => {
     const store = new CalendarStore(demoData);
     const draft = store.createDraft("alex", {

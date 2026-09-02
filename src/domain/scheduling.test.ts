@@ -6,6 +6,11 @@ describe("scheduling foundations", () => {
   it("returns deterministic busy blocks for an attendee", () => {
     expect(busyBlocksFor(demoData.events, "maya")).toEqual([
       {
+        eventId: "maya-roadmap-mon",
+        startsAt: "2026-09-07T20:00:00.000Z",
+        endsAt: "2026-09-07T21:00:00.000Z"
+      },
+      {
         eventId: "maya-focus-tue",
         startsAt: "2026-09-08T18:00:00.000Z",
         endsAt: "2026-09-08T20:00:00.000Z"
@@ -14,6 +19,16 @@ describe("scheduling foundations", () => {
         eventId: "alex-design-review",
         startsAt: "2026-09-09T18:00:00.000Z",
         endsAt: "2026-09-09T19:00:00.000Z"
+      },
+      {
+        eventId: "maya-partner-brief-thu",
+        startsAt: "2026-09-10T19:30:00.000Z",
+        endsAt: "2026-09-10T20:15:00.000Z"
+      },
+      {
+        eventId: "sam-retrospective-fri",
+        startsAt: "2026-09-11T18:00:00.000Z",
+        endsAt: "2026-09-11T19:00:00.000Z"
       }
     ]);
   });

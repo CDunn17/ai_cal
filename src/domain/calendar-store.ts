@@ -19,6 +19,7 @@ import {
   type SchedulingProfile
 } from "./contracts";
 import { initialSchedulingProfiles } from "./scheduling-profiles";
+import { demoData } from "./seed";
 import { proposeSchedule } from "./scheduling";
 
 export class CalendarStoreError extends Error {
@@ -89,6 +90,9 @@ export class CalendarStore {
 
   static fromSnapshot(snapshot: CalendarStoreSnapshot): CalendarStore {
     const store = new CalendarStore(demoDataSchema.parse(snapshot.data));
+    for (const event of demoData.events) {
+      if (!store.events.has(event.id)) store.events.set(event.id, event);
+    }
     for (const draft of snapshot.drafts) {
       store.drafts.set(draft.id, eventDraftSchema.parse(draft));
     }

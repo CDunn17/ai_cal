@@ -45,6 +45,18 @@ const rawDemoData = {
   ],
   events: [
     {
+      id: "maya-roadmap-mon",
+      calendarId: "maya-main",
+      revision: 1,
+      title: "Roadmap review",
+      startsAt: "2026-09-07T20:00:00.000Z",
+      endsAt: "2026-09-07T21:00:00.000Z",
+      timeZone: "America/Los_Angeles",
+      visibility: "public",
+      status: "confirmed",
+      attendeeIds: ["maya", "alex"]
+    },
+    {
       id: "maya-focus-tue",
       calendarId: "maya-main",
       revision: 1,
@@ -79,6 +91,54 @@ const rawDemoData = {
       visibility: "public",
       status: "confirmed",
       attendeeIds: ["alex", "maya"]
+    },
+    {
+      id: "sam-team-standup-wed",
+      calendarId: "sam-main",
+      revision: 1,
+      title: "Team standup",
+      startsAt: "2026-09-09T14:00:00.000Z",
+      endsAt: "2026-09-09T14:30:00.000Z",
+      timeZone: "America/New_York",
+      visibility: "public",
+      status: "confirmed",
+      attendeeIds: ["sam", "alex"]
+    },
+    {
+      id: "alex-lunch-thu",
+      calendarId: "alex-main",
+      revision: 1,
+      title: "Product lunch",
+      startsAt: "2026-09-10T16:00:00.000Z",
+      endsAt: "2026-09-10T17:00:00.000Z",
+      timeZone: "America/New_York",
+      visibility: "public",
+      status: "confirmed",
+      attendeeIds: ["alex", "sam"]
+    },
+    {
+      id: "maya-partner-brief-thu",
+      calendarId: "maya-main",
+      revision: 1,
+      title: "Partner brief",
+      startsAt: "2026-09-10T19:30:00.000Z",
+      endsAt: "2026-09-10T20:15:00.000Z",
+      timeZone: "America/Los_Angeles",
+      visibility: "public",
+      status: "confirmed",
+      attendeeIds: ["maya"]
+    },
+    {
+      id: "sam-retrospective-fri",
+      calendarId: "sam-main",
+      revision: 1,
+      title: "Sprint retrospective",
+      startsAt: "2026-09-11T18:00:00.000Z",
+      endsAt: "2026-09-11T19:00:00.000Z",
+      timeZone: "America/New_York",
+      visibility: "public",
+      status: "confirmed",
+      attendeeIds: ["sam", "maya", "alex"]
     }
   ]
 } as const;
