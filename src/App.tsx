@@ -129,6 +129,10 @@ function workPatternLabel(entry: SchedulingProfile["weeklyWorkPattern"][number])
   return entry.mode === "remote" ? "Working from home" : "In office at " + officeById(entry.officeId ?? "new-york-hq").name;
 }
 
+function eventOwnerLabel(ownerName: string): string {
+  return ownerName.endsWith("s") ? ownerName + "’ Event" : ownerName + "’s Event";
+}
+
 function eventLayout(event: CalendarEvent) {
   const parts = localParts(event.startsAt);
   const endParts = localParts(event.endsAt);
@@ -246,6 +250,7 @@ export function App() {
     () => state?.events.find((event) => event.id === selectedEventId) ?? null,
     [selectedEventId, state]
   );
+  const selectedEventCalendar = selectedEvent ? state?.calendars.find((calendar) => calendar.id === selectedEvent.calendarId) ?? null : null;
   const activeCalendar = state?.calendars.find((calendar) => calendar.ownerId === state.activeUserId);
   const selectedDraft = state?.drafts.find((draft) => draft.id === selectedDraftId) ?? null;
   const calendarColors = new Map(state?.calendars.map((calendar) => [calendar.id, calendar.color]));
@@ -497,7 +502,8 @@ export function App() {
                   {HOURS.map((hour) => <div className="hour-line" key={hour} />)}
                   {state.events.filter((event) => dayKey(event.startsAt) === day.key).map((event) => {
                     const layout = eventLayout(event);
-                    const isBusyOnly = event.title === "Busy";
+                    const isBusyOnly = event.visibility === "private" && event.title === "Busy";
+                    const isPrivateEvent = event.visibility === "private";
                     const style = {
                       top: layout.top,
                       height: layout.height,
@@ -506,7 +512,7 @@ export function App() {
                     return (
                       <button
                         type="button"
-                        className={"event-block" + (isBusyOnly ? " busy-only" : "")}
+                        className={"event-block" + (isPrivateEvent ? " private-event" : "") + (isBusyOnly ? " busy-only" : "")}
                         style={style}
                         key={event.id}
                         onClick={() => setSelectedEventId(event.id)}
@@ -542,7 +548,7 @@ export function App() {
       {selectedEvent && (
         <aside className="event-details" aria-label="Event details">
           <button className="close-button" type="button" aria-label="Close event details" onClick={() => setSelectedEventId(null)}>×</button>
-          <p className="eyebrow">{selectedEvent.title === "Busy" ? "Private time" : "Event details"}</p>
+          <p className="eyebrow">{eventOwnerLabel(selectedEventCalendar?.name ?? "Calendar")}</p>
           <h2>{selectedEvent.title}</h2>
           <p>{timeLabel(selectedEvent.startsAt)}–{timeLabel(selectedEvent.endsAt)} · {DISPLAY_TIME_ZONE.replace("_", " ")}</p>
           {selectedEvent.title === "Busy" ? (
