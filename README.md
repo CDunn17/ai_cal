@@ -29,6 +29,7 @@ The demo should make four things unmistakable:
 - Plan a new meeting through an ordinary dialog: title, duration, attendees, meeting office, and target-date flexibility or a deadline.
 - Clickable team profiles with bounded meeting preferences, recurring focus blocks, office/remote work patterns, and two deterministic office locations with fixed inter-office travel feedback.
 - Event details with attendees, agenda, location, visibility, and scheduling notes.
+- Reviewable weekly-series drafts that show their weekday and bounded occurrence count.
 - A **Proposals** surface showing agent-created candidates and a before/after diff.
 - An **Activity** rail recording the tools used, the inputs supplied, the result, and the human approval or rejection.
 - Discard for uncommitted drafts.
@@ -43,8 +44,9 @@ The tools expose stable application intent and structured data—not components,
 | `get_user_scheduling_profile` | No | Returns one team member’s bounded scheduling profile: requested meeting preferences, office/remote week pattern, and recurring focus blocks. It never returns a home address, live location, or calendar events. |
 | `find_availability` | No | Finds feasible time windows for a supplied attendee set and constraints, with optional office travel feedback. Results are minimised busy/free summaries, never another person’s private event details. |
 | `propose_schedule` | No | Ranks candidate slots and explains the relevant trade-offs: focus time, work hours, buffers, fixed office travel, and timezone fairness. |
+| `propose_recurring_schedule` | No | Finds one weekly time that is feasible across 2–12 named occurrences in a bounded range, checking every occurrence against busy time, focus blocks, work patterns, travel buffers, and preferences. |
 | `get_event_details` | No | Returns a single event only when it is visible to the active user. |
-| `create_event_draft` | Draft only | Creates a visible, server-validated draft with a 24-hour expiry. It cannot send invitations. |
+| `create_event_draft` | Draft only | Creates a visible, server-validated one-time or bounded weekly-series draft with a 24-hour expiry. It cannot send invitations. |
 | `update_event_draft` | Draft only | Changes an existing draft by ID and returns a compact, current draft projection. |
 | `commit_event` | Currently blocked | Registered to explain the confirmation boundary; it cannot commit a draft or send invitations. The separate human UI owns the visible confirmation flow. |
 | `discard_event_draft` | Yes, reversible | Deletes a pending draft owned by the active user. |
@@ -57,7 +59,7 @@ Where a response identifies a calendar item, it includes a stable ID and current
 The first version is a scheduling collaboration demo, not a clone of Google Calendar.
 
 - **In scope:** a polished calendar for one seeded team, deterministic scheduling rules, visible proposals/drafts, WebMCP tools, audit history, and a public deployed demo.
-- **Deferred:** Google/Microsoft OAuth, recurring-event edge cases, email delivery infrastructure, external contacts, natural-language parsing inside the app, native mobile apps, and autonomous rescheduling.
+- **Deferred:** Google/Microsoft OAuth, advanced recurrence exceptions (changes/cancellations per occurrence), email delivery infrastructure, external contacts, natural-language parsing inside the app, native mobile apps, and autonomous rescheduling.
 - **Demo data:** use fictional people, event names, and calendars. No production calendar data or credentials are required to judge the project.
 
 ## Architecture
@@ -119,7 +121,8 @@ Milestones 2 and 3 run a deterministic, fictional demo identity (Alex) through t
 | PATCH /api/events/:id | Edits or moves an event only on the active user’s calendar. Every request includes the reviewed revision; stale writes are rejected with 409 Conflict. |
 | GET /api/team-members/:id/scheduling-profile | Returns one visible team member’s validated, scheduling-only profile. It excludes home address, live location, and all calendar-event content. |
 | POST /api/proposals | Searches 15-minute slots using working hours, protected busy time, recurring focus blocks, profile travel buffers, and profile meeting preferences. An optional selected office yields fixed, work-pattern-aware travel feedback. Results contain free/busy-derived reasons and warnings, never a private event’s details. |
-| POST /api/event-drafts | Creates a separate, 24-hour reviewable draft on the active user’s calendar. It remains out of the committed event collection and cannot send invitations. |
+| POST /api/recurring-proposals | Searches a bounded 2–12 occurrence weekly series and returns only times that are feasible for every occurrence. It uses the same private busy redaction and scheduling profile constraints as one-time proposals. |
+| POST /api/event-drafts | Creates a separate, 24-hour reviewable one-time or weekly-series draft on the active user’s calendar. A series has one weekday and 2–12 occurrences, remains out of the committed event collection, and cannot send invitations. |
 | PATCH /api/event-drafts/:id | Updates a visible draft by current revision, preserving draft-only status. |
 | DELETE /api/event-drafts/:id | Discards a pending draft only when its current revision is supplied. |
 | POST /api/event-drafts/:id/commit-confirmation | Creates a five-minute, one-time confirmation for a visible draft at the revision the person reviewed. This only prepares the visible confirmation dialog. |
@@ -198,7 +201,7 @@ Exact API shapes may evolve while WebMCP remains a proposed standard, so keep re
 
 ### Current WebMCP adapter
 
-Milestone 4 registers ten imperative tools from a small browser-only adapter, including a bounded scheduling-profile read. It uses the official WebMCP TypeScript declarations, registers tools with an AbortController for component-lifecycle cleanup, and makes every tool call visible in the in-app Agent activity rail.
+Milestone 4 registers eleven imperative tools from a small browser-only adapter, including bounded one-time and recurring scheduling reads. It uses the official WebMCP TypeScript declarations, registers tools with an AbortController for component-lifecycle cleanup, and makes every tool call visible in the in-app Agent activity rail.
 
 - Read tools return a privacy-filtered state projection or scheduling options and carry the read-only annotation.
 - Draft tools call the same Worker commands as the human UI; a successful mutation refreshes the visible calendar state.
@@ -221,8 +224,9 @@ Calendar access is sensitive. These guardrails are product requirements, not pol
 ### Mutation model
 
 - **Read → propose → draft → review → confirm → commit.** No tool skips a state.
-- `find_availability`, `propose_schedule`, and `resolve_conflict` are read-only.
-- `create_event_draft` and `update_event_draft` only affect drafts owned by the active user and must produce a visible UI artifact.
+- `find_availability`, `propose_schedule`, `propose_recurring_schedule`, and `resolve_conflict` are read-only.
+- `propose_recurring_schedule` requires a single weekday and a bounded 2–12 occurrence count. It returns no series candidate unless every occurrence fits; it never exposes the private event or vacation details that blocked an occurrence.
+- `create_event_draft` and `update_event_draft` only affect drafts owned by the active user and must produce a visible UI artifact. Recurring drafts are weekly only, validate that their first occurrence matches the declared weekday, and remain a single reviewable series draft.
 - `commit_event` is intentionally blocked in the current build. A person can commit only by opening the visible confirmation dialog for a non-expired draft at the reviewed revision; that confirmation is one-time and expires after five minutes.
 - Never let an agent delete a calendar, bulk-edit events, cancel an event, or send invitations without the in-app confirmation in v1.
 - Commit requests require an idempotency key, reject stale confirmations/revisions, retain bounded retry receipts, and rate-limit invalid attempts to three per minute. Human commits and draft changes appear in the audit trail.

@@ -42,4 +42,10 @@ Close with:
 
 > MyCP demonstrates an agent-native calendar interaction: structured, least-privilege scheduling help with visible drafts and a human-controlled final decision.
 
+Optional alternate prompt for the recurring-series capability:
+
+> Find a 30-minute weekly touchpoint with Sam on Tuesdays for the next four weeks. Honor his morning preference where possible and schedule around my calendar and vacations. Create a draft only.
+
+Show `propose_recurring_schedule` checking each of the four occurrences, then the resulting weekly-series draft. Emphasize that it cannot reveal the private details that make an occurrence unavailable, create a committed series, or send invitations.
+
 Before recording, use the deployed URL, start from the seeded state, and confirm the browser shows origin isolation and registered tools.

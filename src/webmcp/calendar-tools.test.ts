@@ -8,6 +8,7 @@ describe("calendar WebMCP tools", () => {
       "get_user_scheduling_profile",
       "find_availability",
       "propose_schedule",
+      "propose_recurring_schedule",
       "get_event_details",
       "create_event_draft",
       "update_event_draft",
@@ -20,6 +21,7 @@ describe("calendar WebMCP tools", () => {
       "get_user_scheduling_profile",
       "find_availability",
       "propose_schedule",
+      "propose_recurring_schedule",
       "get_event_details",
       "resolve_conflict"
     ]);
@@ -41,8 +43,22 @@ describe("calendar WebMCP tools", () => {
     const dispose = await registerCalendarTools();
     dispose();
 
-    expect(registered).toHaveLength(10);
+    expect(registered).toHaveLength(11);
     delete (globalThis as { document?: unknown }).document;
+  });
+
+  it("keeps recurring scheduling read-only and bounds the series contract", () => {
+    const recurringTool = calendarTools.find((tool) => tool.name === "propose_recurring_schedule");
+
+    expect(recurringTool?.annotations?.readOnlyHint).toBe(true);
+    expect(recurringTool?.inputSchema).toMatchObject({
+      required: ["attendeeIds", "durationMinutes", "rangeStartsAt", "rangeEndsAt", "recurrence"],
+      properties: {
+        recurrence: {
+          properties: { frequency: { enum: ["weekly"] }, occurrenceCount: { minimum: 2, maximum: 12 } }
+        }
+      }
+    });
   });
 
   it("bounds tool output by UTF-8 byte size even when content is untrusted and large", () => {

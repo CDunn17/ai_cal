@@ -7,6 +7,7 @@ import {
   demoDataSchema,
   draftCommitConfirmationSchema,
   eventDraftSchema,
+  recurringScheduleRequestSchema,
   scheduleRequestSchema,
   schedulingProfileSchema,
   updateEventInputSchema,
@@ -21,7 +22,7 @@ import {
 import { initialSchedulingProfiles } from "./scheduling-profiles";
 import { demoData } from "./seed";
 import { migrateOfficeId } from "./offices";
-import { proposeSchedule } from "./scheduling";
+import { proposeRecurringSchedule, proposeSchedule } from "./scheduling";
 
 export class CalendarStoreError extends Error {
   constructor(
@@ -90,6 +91,10 @@ function migratePersistedOfficeIds(data: unknown): unknown {
       };
     })
   };
+}
+
+function weekdayForEvent(event: CalendarEvent): string {
+  return new Intl.DateTimeFormat("en-US", { timeZone: event.timeZone, weekday: "long" }).format(new Date(event.startsAt)).toLowerCase();
 }
 
 export class CalendarStore {
@@ -179,6 +184,17 @@ export class CalendarStore {
     }
   }
 
+  proposeRecurring(activeUserId: string, input: unknown) {
+    this.assertUser(activeUserId);
+    const request = recurringScheduleRequestSchema.parse(input);
+    this.assertKnownAttendees(request.attendeeIds);
+    try {
+      return proposeRecurringSchedule([...this.events.values()], this.people, this.schedulingProfiles, activeUserId, request);
+    } catch (error) {
+      throw new CalendarStoreError(400, error instanceof Error ? error.message : "Could not produce recurring scheduling options.");
+    }
+  }
+
   schedulingProfileFor(activeUserId: string, personId: string): SchedulingProfile {
     this.assertUser(activeUserId);
     this.assertUser(personId);
@@ -260,6 +276,7 @@ export class CalendarStore {
       revision: draft.event.revision + 1,
       status: "draft"
     });
+    this.assertRecurrenceMatchesStart(event);
     const updated = eventDraftSchema.parse({ ...draft, event, revision: draft.revision + 1 });
     this.drafts.set(updated.id, updated);
     this.invalidateConfirmationsFor(updated.id);
@@ -341,6 +358,7 @@ export class CalendarStore {
       attendeeIds: changes.attendeeIds ? [...new Set([activeUserId, ...changes.attendeeIds])] : existing.attendeeIds,
       revision: existing.revision + 1
     });
+    this.assertRecurrenceMatchesStart(updated);
     this.events.set(updated.id, updated);
     this.record(this.didMove(existing, updated) ? "moved" : "updated", updated, activeUserId);
     return updated;
@@ -355,13 +373,15 @@ export class CalendarStore {
     const calendar = this.getCalendar(parsed.calendarId);
     this.assertCalendarOwner(calendar.id, activeUserId);
     this.assertKnownAttendees(parsed.attendeeIds ?? []);
-    return calendarEventSchema.parse({
+    const event = calendarEventSchema.parse({
       ...parsed,
       id: crypto.randomUUID(),
       revision: 1,
       attendeeIds: [...new Set([activeUserId, ...(parsed.attendeeIds ?? [])])],
       status
     });
+    this.assertRecurrenceMatchesStart(event);
+    return event;
   }
 
   private record(action: AuditEntry["action"], event: CalendarEvent, activeUserId: string): void {
@@ -467,6 +487,12 @@ export class CalendarStore {
     const unknownAttendee = attendeeIds.find((attendeeId) => !this.people.some((person) => person.id === attendeeId));
     if (unknownAttendee) {
       throw new CalendarStoreError(400, "One or more attendees are not known to this calendar.");
+    }
+  }
+
+  private assertRecurrenceMatchesStart(event: CalendarEvent): void {
+    if (event.recurrence && weekdayForEvent(event) !== event.recurrence.weekday) {
+      throw new CalendarStoreError(400, "A weekly draft must start on its configured recurrence weekday.");
     }
   }
 }

@@ -1,4 +1,4 @@
-import type { CalendarEvent, EventDraft, ScheduleCandidate, SchedulingProfile } from "../domain/contracts";
+import type { CalendarEvent, EventDraft, RecurringScheduleCandidate, ScheduleCandidate, SchedulingProfile } from "../domain/contracts";
 import type { CalendarState } from "../domain/calendar-store";
 
 export type ToolActivity = Readonly<{
@@ -66,6 +66,7 @@ function compactEvent(event: CalendarEvent) {
     endsAt: event.endsAt,
     timeZone: event.timeZone,
     visibility: event.visibility,
+    recurrence: event.recurrence,
     attendeeIds: event.attendeeIds.slice(0, 10),
     location: clip(event.location, 120),
     agenda: clip(event.agenda, 240)
@@ -88,6 +89,19 @@ function compactCandidates(candidates: ScheduleCandidate[]) {
     score: candidate.score,
     reasons: candidate.reasons.slice(0, 2).map((reason) => clip(reason, 140)),
     warnings: candidate.warnings.slice(0, 1).map((warning) => clip(warning, 140))
+  }));
+}
+
+function compactRecurringCandidates(candidates: RecurringScheduleCandidate[]) {
+  return candidates.slice(0, 2).map((candidate) => ({
+    startsAt: candidate.startsAt,
+    endsAt: candidate.endsAt,
+    score: candidate.score,
+    recurrence: candidate.recurrence,
+    occurrenceCount: candidate.occurrences.length,
+    occurrences: candidate.occurrences.slice(0, 3).map(({ startsAt, endsAt }) => ({ startsAt, endsAt })),
+    reasons: candidate.reasons.slice(0, 2).map((reason) => clip(reason, 140)),
+    warnings: candidate.warnings.slice(0, 2).map((warning) => clip(warning, 140))
   }));
 }
 
@@ -149,6 +163,17 @@ const timeRangeProperties = {
   rangeEndsAt: { type: "string", format: "date-time" }
 };
 
+const weeklyRecurrenceProperties = {
+  frequency: { type: "string", enum: ["weekly"] },
+  weekday: { type: "string", enum: ["monday", "tuesday", "wednesday", "thursday", "friday"] },
+  occurrenceCount: { type: "integer", minimum: 2, maximum: 12, description: "Bounded number of weekly occurrences to validate and include in the draft." }
+};
+
+const recurringScheduleProperties = {
+  ...timeRangeProperties,
+  recurrence: schema(weeklyRecurrenceProperties, ["frequency", "weekday", "occurrenceCount"])
+};
+
 const eventProperties = {
   calendarId: { type: "string", description: "Calendar ID owned by the active user." },
   title: { type: "string", maxLength: 140 },
@@ -156,6 +181,7 @@ const eventProperties = {
   endsAt: { type: "string", format: "date-time" },
   timeZone: { type: "string", description: "IANA timezone, for example America/New_York." },
   visibility: { type: "string", enum: ["public", "private"] },
+  recurrence: schema(weeklyRecurrenceProperties, ["frequency", "weekday", "occurrenceCount"]),
   attendeeIds: { type: "array", items: { type: "string" }, maxItems: 20 },
   location: { type: "string", maxLength: 160 },
   agenda: { type: "string", maxLength: 2000 }
@@ -221,6 +247,17 @@ export const calendarTools: WebMCP.ModelContextTool[] = [
     }, input)
   },
   {
+    name: "propose_recurring_schedule",
+    title: "Propose a recurring schedule",
+    description: "Find a stable weekly time across 2–12 named occurrences in a bounded range. It checks each occurrence against busy time, protected focus blocks, work patterns, travel buffers, and stated preferences. It returns compact series candidates only and never creates or changes events.",
+    inputSchema: schema(recurringScheduleProperties, ["attendeeIds", "durationMinutes", "rangeStartsAt", "rangeEndsAt", "recurrence"]),
+    annotations: { readOnlyHint: true, untrustedContentHint: true },
+    execute: async (input, { signal }) => runTool("propose_recurring_schedule", "read", async () => {
+      const response = await api<{ proposals: RecurringScheduleCandidate[] }>("/api/recurring-proposals", { method: "POST", body: JSON.stringify(input) }, signal);
+      return { proposals: compactRecurringCandidates(response.proposals) };
+    }, input)
+  },
+  {
     name: "get_event_details",
     title: "Get event details",
     description: "Read one event only if it is already visible to the active user. Private events outside the user's access are returned only as Busy.",
@@ -236,7 +273,7 @@ export const calendarTools: WebMCP.ModelContextTool[] = [
   {
     name: "create_event_draft",
     title: "Create event draft",
-    description: "Create a visible, pending event draft owned by the active user. This never creates a committed event or sends invitations.",
+    description: "Create a visible, pending single or bounded weekly-series draft owned by the active user. A weekly series must specify 2–12 occurrences. This never creates a committed event or sends invitations.",
     inputSchema: schema(eventProperties, ["calendarId", "title", "startsAt", "endsAt", "timeZone", "visibility"]),
     annotations: { readOnlyHint: false, untrustedContentHint: true },
     execute: async (input, { signal }) => runTool("create_event_draft", "draft", async () => {

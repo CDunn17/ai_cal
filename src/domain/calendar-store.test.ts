@@ -124,6 +124,32 @@ describe("CalendarStore", () => {
     expect(store.stateFor("alex").auditEntries[0].action).toBe("discarded");
   });
 
+  it("keeps a bounded weekly recurrence on a reviewable draft and rejects a mismatched start day", () => {
+    const store = new CalendarStore(demoData);
+    const draft = store.createDraft("alex", {
+      calendarId: "alex-main",
+      title: "Weekly touchpoint",
+      startsAt: "2026-09-08T14:00:00.000Z",
+      endsAt: "2026-09-08T14:30:00.000Z",
+      timeZone: "America/New_York",
+      visibility: "public",
+      attendeeIds: ["sam"],
+      recurrence: { frequency: "weekly", weekday: "tuesday", occurrenceCount: 4 }
+    });
+
+    expect(draft.event.recurrence).toEqual({ frequency: "weekly", weekday: "tuesday", occurrenceCount: 4 });
+    expect(() => store.createDraft("alex", {
+      calendarId: "alex-main",
+      title: "Wrong weekday",
+      startsAt: "2026-09-08T14:00:00.000Z",
+      endsAt: "2026-09-08T14:30:00.000Z",
+      timeZone: "America/New_York",
+      visibility: "public",
+      attendeeIds: ["sam"],
+      recurrence: { frequency: "weekly", weekday: "wednesday", occurrenceCount: 4 }
+    })).toThrow(new CalendarStoreError(400, "A weekly draft must start on its configured recurrence weekday."));
+  });
+
   it("round-trips drafts and audit history through a persistence snapshot", () => {
     const original = new CalendarStore(demoData);
     const draft = original.createDraft("alex", {

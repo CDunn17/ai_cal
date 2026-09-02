@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { demoData } from "./seed";
-import { busyBlocksFor, eventsOverlap, proposeSchedule } from "./scheduling";
+import { busyBlocksFor, eventsOverlap, proposeRecurringSchedule, proposeSchedule } from "./scheduling";
 
 describe("scheduling foundations", () => {
   it("returns deterministic busy blocks for an attendee", () => {
@@ -80,5 +80,26 @@ describe("scheduling foundations", () => {
     });
 
     expect(proposals).toEqual([]);
+  });
+
+  it("finds one weekly time that works for every bounded occurrence", () => {
+    const proposals = proposeRecurringSchedule(demoData.events, demoData.people, demoData.schedulingProfiles ?? [], "alex", {
+      attendeeIds: ["sam"],
+      durationMinutes: 30,
+      rangeStartsAt: "2026-09-08T13:00:00.000Z",
+      rangeEndsAt: "2026-10-07T00:00:00.000Z",
+      recurrence: { frequency: "weekly", weekday: "tuesday", occurrenceCount: 4 }
+    });
+
+    expect(proposals).not.toEqual([]);
+    expect(proposals[0]).toMatchObject({ recurrence: { frequency: "weekly", weekday: "tuesday", occurrenceCount: 4 } });
+    expect(proposals[0].occurrences).toHaveLength(4);
+    expect(proposals[0].occurrences.map((occurrence) => occurrence.startsAt)).toEqual([
+      "2026-09-08T13:00:00.000Z",
+      "2026-09-15T13:00:00.000Z",
+      "2026-09-22T13:00:00.000Z",
+      "2026-09-29T13:00:00.000Z"
+    ]);
+    expect(proposals[0].reasons[0]).toContain("All 4 weekly tuesday occurrences fit");
   });
 });

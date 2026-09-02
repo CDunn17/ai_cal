@@ -107,6 +107,7 @@ dd { margin: 0; color: #494351; font-size: .87rem; }
 .event-diff span { margin-bottom: 4px; color: #877e94; font-size: .67rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
 .event-diff strong { color: #4b4457; font-size: .8rem; }
 .event-diff p, .draft-expiry { margin: 4px 0 0; color: #746d7c; font-size: .74rem; line-height: 1.35; }
+.recurrence-note { margin-top: 10px !important; padding: 9px 10px; border: 1px solid #e4dcfa; border-radius: 8px; color: #625380 !important; background: #f7f4ff; font-size: .76rem !important; line-height: 1.4; }
 .commit-disabled { grid-column: 1 / -1; padding: 9px 0 0; color: #7f5064; font-size: .73rem; line-height: 1.35; }
 .commit-note { margin: 12px 0 0; color: #746d7c; font-size: .74rem; line-height: 1.4; }
 .profile-details { max-height: calc(100vh - 112px); overflow-y: auto; }

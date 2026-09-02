@@ -62,6 +62,11 @@ export const calendarSchema = z.object({
 
 export const eventVisibilitySchema = z.enum(["public", "private"]);
 export const eventStatusSchema = z.enum(["confirmed", "tentative", "draft"]);
+export const weeklyRecurrenceSchema = z.object({
+  frequency: z.literal("weekly"),
+  weekday: weekdaySchema,
+  occurrenceCount: z.number().int().min(2).max(12)
+});
 
 const eventFieldsSchema = z.object({
   calendarId: z.string().min(1),
@@ -72,6 +77,7 @@ const eventFieldsSchema = z.object({
   visibility: eventVisibilitySchema,
   status: eventStatusSchema,
   attendeeIds: z.array(z.string().min(1)).max(20),
+  recurrence: weeklyRecurrenceSchema.optional(),
   location: z.string().max(160).optional(),
   agenda: z.string().max(2_000).optional()
 });
@@ -110,12 +116,24 @@ export const scheduleRequestSchema = z
     path: ["rangeEndsAt"]
   });
 
+export const recurringScheduleRequestSchema = scheduleRequestSchema.extend({
+  recurrence: weeklyRecurrenceSchema
+});
+
 export const scheduleCandidateSchema = z.object({
   startsAt: z.string().datetime({ offset: true }),
   endsAt: z.string().datetime({ offset: true }),
   score: z.number().int(),
   reasons: z.array(z.string().min(1)).min(1).max(10),
   warnings: z.array(z.string().min(1)).max(10)
+});
+
+export const recurringScheduleCandidateSchema = scheduleCandidateSchema.extend({
+  recurrence: weeklyRecurrenceSchema,
+  occurrences: z.array(z.object({
+    startsAt: z.string().datetime({ offset: true }),
+    endsAt: z.string().datetime({ offset: true })
+  })).min(2).max(12)
 });
 
 export const eventDraftSchema = z.object({
@@ -177,7 +195,10 @@ export type CreateEventInput = z.infer<typeof createEventInputSchema>;
 export type UpdateEventInput = z.infer<typeof updateEventInputSchema>;
 export type AuditEntry = z.infer<typeof auditEntrySchema>;
 export type ScheduleRequest = z.infer<typeof scheduleRequestSchema>;
+export type WeeklyRecurrence = z.infer<typeof weeklyRecurrenceSchema>;
+export type RecurringScheduleRequest = z.infer<typeof recurringScheduleRequestSchema>;
 export type ScheduleCandidate = z.infer<typeof scheduleCandidateSchema>;
+export type RecurringScheduleCandidate = z.infer<typeof recurringScheduleCandidateSchema>;
 export type EventDraft = z.infer<typeof eventDraftSchema>;
 export type DraftCommitConfirmation = z.infer<typeof draftCommitConfirmationSchema>;
 export type CommitReceipt = z.infer<typeof commitReceiptSchema>;

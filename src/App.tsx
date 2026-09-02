@@ -133,6 +133,11 @@ function eventOwnerLabel(ownerName: string): string {
   return ownerName.endsWith("s") ? ownerName + "’ Event" : ownerName + "’s Event";
 }
 
+function recurrenceLabel(event: CalendarEvent): string | null {
+  if (!event.recurrence) return null;
+  return "Weekly on " + weekdayLabel(event.recurrence.weekday) + " · " + event.recurrence.occurrenceCount + " occurrences";
+}
+
 function eventLayout(event: CalendarEvent) {
   const parts = localParts(event.startsAt);
   const endParts = localParts(event.endsAt);
@@ -477,7 +482,7 @@ export function App() {
           <section className="draft-section">
             <p className="eyebrow">Pending drafts</p>
             {state.drafts.length === 0 ? <p className="muted">Scheduling proposals become visible drafts before anything is committed.</p> : (
-              <div className="draft-list">{state.drafts.map((draft) => <button type="button" className="draft-card" key={draft.id} onClick={() => setSelectedDraftId(draft.id)}><strong>{draft.event.title}</strong><span>{timeLabel(draft.event.startsAt)} · review required</span></button>)}</div>
+              <div className="draft-list">{state.drafts.map((draft) => <button type="button" className="draft-card" key={draft.id} onClick={() => setSelectedDraftId(draft.id)}><strong>{draft.event.title}</strong><span>{timeLabel(draft.event.startsAt)}{recurrenceLabel(draft.event) ? " · repeats weekly" : ""} · review required</span></button>)}</div>
             )}
           </section>
           <section className="tool-activity-section">
@@ -543,6 +548,7 @@ export function App() {
           <p className="eyebrow">Reviewable draft</p>
           <h2>{selectedDraft.event.title}</h2>
           <p>{timeLabel(selectedDraft.event.startsAt)}–{timeLabel(selectedDraft.event.endsAt)} · {DISPLAY_TIME_ZONE.replace("_", " ")}</p>
+          {recurrenceLabel(selectedDraft.event) && <p className="recurrence-note">{recurrenceLabel(selectedDraft.event)}. The entire series remains a draft until you review and confirm it.</p>}
           <div className="event-diff">
             <div><span>Before</span><strong>No event or invitations</strong><p>The calendar remains unchanged.</p></div>
             <div><span>After approval</span><strong>{selectedDraft.event.title}</strong><p>{selectedDraft.event.attendeeIds.map((id) => state.people.find((person) => person.id === id)?.displayName).filter(Boolean).join(", ")}</p></div>
@@ -566,6 +572,7 @@ export function App() {
               <dl>
                 <div><dt>Attendees</dt><dd>{selectedEvent.attendeeIds.map((id) => state.people.find((person) => person.id === id)?.displayName).filter(Boolean).join(", ")}</dd></div>
                 <div><dt>Visibility</dt><dd>{selectedEvent.visibility}</dd></div>
+                {recurrenceLabel(selectedEvent) && <div><dt>Recurrence</dt><dd>{recurrenceLabel(selectedEvent)}</dd></div>}
                 {selectedEvent.location && <div><dt>Location</dt><dd>{selectedEvent.location}</dd></div>}
               </dl>
               {selectedEvent.calendarId === activeCalendar?.id && (

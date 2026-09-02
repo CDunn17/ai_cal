@@ -89,6 +89,9 @@ export default {
       if (request.method === "POST" && url.pathname === "/api/proposals") {
         return apiResponse({ proposals: await calendarStore.propose(activeDemoUserId, await requestJson(request)) });
       }
+      if (request.method === "POST" && url.pathname === "/api/recurring-proposals") {
+        return apiResponse({ proposals: await calendarStore.proposeRecurring(activeDemoUserId, await requestJson(request)) });
+      }
       if (request.method === "POST" && url.pathname === "/api/event-drafts") {
         return apiResponse({ draft: await calendarStore.createDraft(activeDemoUserId, await requestJson(request)) }, { status: 201 });
       }

@@ -14,7 +14,7 @@ Calendar work is full of small but consequential trade-offs: time zones, focus t
 
 ## What it does
 
-MyCP is a seeded shared-calendar demo for a distributed launch team. A browser agent uses WebMCP tools to inspect narrowly scoped context, find availability, and rank meeting options. It can create and revise a visible draft, but the tool layer cannot commit it or send invitations.
+MyCP is a seeded shared-calendar demo for a distributed launch team. A browser agent uses WebMCP tools to inspect narrowly scoped context, find one-time or weekly availability, and rank meeting options. A weekly proposal checks every requested occurrence against private busy time, protected focus blocks, work patterns, travel buffers, and time preferences without revealing why another person is unavailable. It can create and revise a visible draft, but the tool layer cannot commit it or send invitations.
 
 The person reviews a before/after diff in the calendar, opens a confirmation dialog, and explicitly adds the event. That API path requires the reviewed draft revision, a five-minute one-time confirmation, and an idempotency key. Private events remain generic Busy blocks outside the owner’s access.
 
@@ -29,7 +29,7 @@ The person reviews a before/after diff in the calendar, opens a confirmation dia
 
 ## WebMCP usage
 
-MyCP registers ten intent-level tools rather than exposing DOM selectors or database access. `get_calendar_context` provides bounded calendar/team identifiers, while `get_user_scheduling_profile` reads a purpose-limited profile with meeting preferences, recurring focus blocks, and office/remote work patterns—never a home address, live location, or private events. Read tools are annotated as read-only. Tool outputs carrying calendar content are marked untrusted and limited to 1.4 KB of UTF-8 data; the adapter returns compact events and candidate slots, or a safe truncation response. Mutations are draft-only. `commit_event` is intentionally blocked so an agent cannot bypass the human confirmation flow.
+MyCP registers eleven intent-level tools rather than exposing DOM selectors or database access. `get_calendar_context` provides bounded calendar/team identifiers, while `get_user_scheduling_profile` reads a purpose-limited profile with meeting preferences, recurring focus blocks, and office/remote work patterns—never a home address, live location, or private events. `propose_recurring_schedule` validates a single weekly time across 2–12 occurrences before the agent can create a weekly-series draft. Read tools are annotated as read-only. Tool outputs carrying calendar content are marked untrusted and limited to 1.4 KB of UTF-8 data; the adapter returns compact events and candidate slots, or a safe truncation response. Mutations are draft-only. `commit_event` is intentionally blocked so an agent cannot bypass the human confirmation flow.
 
 ## Challenges we ran into
 
@@ -44,7 +44,7 @@ The key challenge was making the agent useful without making it overly powerful.
 
 ## What’s next
 
-After the hackathon, we would add real authentication, provider OAuth, per-user notification preferences, recurring-event handling, and a normalized D1 schema. Those additions would preserve the same visible-draft and explicit-confirmation boundaries.
+After the hackathon, we would add real authentication, provider OAuth, per-user notification preferences, recurrence exceptions and cancellation flows, and a normalized D1 schema. Those additions would preserve the same visible-draft and explicit-confirmation boundaries.
 
 ## Submission links
 
