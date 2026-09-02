@@ -249,6 +249,7 @@ export function App() {
   const activeCalendar = state?.calendars.find((calendar) => calendar.ownerId === state.activeUserId);
   const selectedDraft = state?.drafts.find((draft) => draft.id === selectedDraftId) ?? null;
   const calendarColors = new Map(state?.calendars.map((calendar) => [calendar.id, calendar.color]));
+  const teamMemberColors = new Map(state?.calendars.map((calendar) => [calendar.ownerId, calendar.color]));
   const profilesByPersonId = useMemo(() => new Map(state?.schedulingProfiles.map((profile) => [profile.personId, profile])), [state]);
   const selectedProfile = selectedProfileUserId ? profilesByPersonId.get(selectedProfileUserId) ?? null : null;
   const selectedProfilePerson = selectedProfileUserId ? state?.people.find((person) => person.id === selectedProfileUserId) ?? null : null;
@@ -449,21 +450,10 @@ export function App() {
 
       <div className="calendar-layout">
         <aside className="sidebar">
-          <section>
-            <p className="eyebrow">Calendars</p>
-            <div className="calendar-list">
-              {state.calendars.map((calendar) => (
-                <div className="calendar-item" key={calendar.id}>
-                  <span className="calendar-color" style={{ background: calendar.color }} />
-                  <span>{calendar.name}</span>
-                </div>
-              ))}
-            </div>
-          </section>
           <section className="team-section">
             <p className="eyebrow">Team</p>
             <div className="team-list">
-              {state.people.map((person) => <button type="button" className="team-member-card" key={person.id} onClick={() => setSelectedProfileUserId(person.id)}><span className="team-avatar">{person.displayName.slice(0, 1)}</span><span><strong>{person.displayName}{person.id === state.activeUserId ? " (you)" : ""}</strong><small>Scheduling profile · {profileOfficeName(person.id)}</small></span></button>)}
+              {state.people.map((person) => <button type="button" className="team-member-card" key={person.id} onClick={() => setSelectedProfileUserId(person.id)}><span className="team-avatar" style={{ background: teamMemberColors.get(person.id) ?? "#6547cd" }}>{person.displayName.slice(0, 1)}</span><span><strong>{person.displayName}{person.id === state.activeUserId ? " (you)" : ""}</strong><small>Scheduling profile · {profileOfficeName(person.id)}</small></span></button>)}
             </div>
           </section>
           <section className="free-busy-note">

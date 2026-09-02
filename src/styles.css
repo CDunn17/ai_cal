@@ -32,16 +32,13 @@ button { cursor: pointer; }
 .calendar-layout { display: grid; grid-template-columns: 236px minmax(760px, 1fr); gap: 22px; width: min(1480px, calc(100% - 48px)); margin: 0 auto; padding: 26px 0 54px; }
 .sidebar { display: flex; flex-direction: column; gap: 26px; padding: 18px 4px; }
 .eyebrow { margin: 0 0 9px; color: #7960c5; font-size: .68rem; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
-.calendar-list { display: grid; gap: 8px; }
-.calendar-item { display: flex; align-items: center; gap: 9px; padding: 7px 8px; border-radius: 7px; color: #4e485b; font-size: .9rem; }
-.calendar-color { width: 10px; height: 10px; border-radius: 4px; }
 .team-list { display: grid; gap: 7px; }
 .team-member-card { display: flex; align-items: center; gap: 9px; width: 100%; border: 1px solid transparent; border-radius: 9px; padding: 7px; color: #4e485b; background: transparent; text-align: left; }
 .team-member-card:hover { border-color: #ded6f2; background: #f4f1fc; }
 .team-member-card > span:last-child { display: grid; min-width: 0; gap: 2px; }
 .team-member-card strong { overflow: hidden; font-size: .78rem; text-overflow: ellipsis; white-space: nowrap; }
 .team-member-card small { overflow: hidden; color: #7c7486; font-size: .66rem; text-overflow: ellipsis; white-space: nowrap; }
-.team-avatar { display: grid; flex: 0 0 auto; width: 25px; height: 25px; place-items: center; border-radius: 50%; color: #5a429f; background: #e9e1ff; font-size: .72rem; font-weight: 800; }
+.team-avatar { display: grid; flex: 0 0 auto; width: 25px; height: 25px; place-items: center; border-radius: 50%; color: #fff; font-size: .72rem; font-weight: 800; }
 .free-busy-note { padding: 16px; border: 1px solid #e2dbf2; border-radius: 12px; background: #f1edff; }
 .free-busy-note strong { display: block; margin-bottom: 8px; font-size: .9rem; }
 .free-busy-note p:last-child, .muted { margin: 0; color: #706a7d; font-size: .8rem; line-height: 1.5; }
