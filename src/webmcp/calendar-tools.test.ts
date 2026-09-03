@@ -6,9 +6,12 @@ describe("calendar WebMCP tools", () => {
     expect(calendarTools.map((tool) => tool.name)).toEqual([
       "get_calendar_context",
       "get_user_scheduling_profile",
+      "get_events_in_range",
       "find_availability",
       "propose_schedule",
       "propose_recurring_schedule",
+      "propose_time_away_changes",
+      "create_time_away_change_set_draft",
       "get_event_details",
       "create_event_draft",
       "update_event_draft",
@@ -19,9 +22,11 @@ describe("calendar WebMCP tools", () => {
     expect(calendarTools.filter((tool) => tool.annotations?.readOnlyHint).map((tool) => tool.name)).toEqual([
       "get_calendar_context",
       "get_user_scheduling_profile",
+      "get_events_in_range",
       "find_availability",
       "propose_schedule",
       "propose_recurring_schedule",
+      "propose_time_away_changes",
       "get_event_details",
       "resolve_conflict"
     ]);
@@ -43,7 +48,7 @@ describe("calendar WebMCP tools", () => {
     const dispose = await registerCalendarTools();
     dispose();
 
-    expect(registered).toHaveLength(11);
+    expect(registered).toHaveLength(14);
     delete (globalThis as { document?: unknown }).document;
   });
 
@@ -55,7 +60,7 @@ describe("calendar WebMCP tools", () => {
       required: ["attendeeIds", "durationMinutes", "rangeStartsAt", "rangeEndsAt", "recurrence"],
       properties: {
         recurrence: {
-          properties: { frequency: { enum: ["weekly"] }, occurrenceCount: { minimum: 2, maximum: 12 } }
+          properties: { frequency: { enum: ["weekly"] }, occurrenceCount: { minimum: 2, maximum: 26 } }
         }
       }
     });

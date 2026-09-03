@@ -54,6 +54,32 @@ function localDay(instant: string, timeZone: string): string {
   return parts.year + "-" + parts.month + "-" + parts.day;
 }
 
+function timeZoneOffsetMinutes(instant: number, timeZone: string): number {
+  const offset = new Intl.DateTimeFormat("en-US", { timeZone, timeZoneName: "longOffset" })
+    .formatToParts(new Date(instant))
+    .find((part) => part.type === "timeZoneName")?.value;
+  const match = offset?.match(/^GMT([+-])(\d{2}):(\d{2})$/);
+  return match ? (match[1] === "-" ? -1 : 1) * (Number(match[2]) * 60 + Number(match[3])) : 0;
+}
+
+function zonedDateTimeToEpoch(parts: Record<string, string>, timeZone: string): number {
+  const localUtc = Date.UTC(Number(parts.year), Number(parts.month) - 1, Number(parts.day), Number(parts.hour), Number(parts.minute));
+  const initial = localUtc - timeZoneOffsetMinutes(localUtc, timeZone) * 60_000;
+  return localUtc - timeZoneOffsetMinutes(initial, timeZone) * 60_000;
+}
+
+function addWeeksAtLocalTime(instant: string, timeZone: string, weeks: number): string {
+  const parts = localDateParts(instant, timeZone);
+  const shiftedDate = new Date(Date.UTC(Number(parts.year), Number(parts.month) - 1, Number(parts.day) + weeks * 7));
+  return new Date(zonedDateTimeToEpoch({
+    year: String(shiftedDate.getUTCFullYear()),
+    month: String(shiftedDate.getUTCMonth() + 1).padStart(2, "0"),
+    day: String(shiftedDate.getUTCDate()).padStart(2, "0"),
+    hour: parts.hour,
+    minute: parts.minute
+  }, timeZone)).toISOString();
+}
+
 function roundedUpToQuarterHour(timestamp: number): number {
   const quarter = 15 * 60_000;
   return Math.ceil(timestamp / quarter) * quarter;
@@ -127,7 +153,7 @@ function preferenceFeedback(interval: CandidateInterval, person: Person, profile
 
 export function busyBlocksFor(events: readonly CalendarEvent[], personId: string): BusyBlock[] {
   return events
-    .filter((event) => event.status !== "draft" && event.attendeeIds.includes(personId))
+    .filter((event) => (event.status === "confirmed" || event.status === "tentative") && event.attendeeIds.includes(personId))
     .map(({ startsAt, endsAt, id }) => ({ startsAt, endsAt, eventId: id }))
     .sort((left, right) => Date.parse(left.startsAt) - Date.parse(right.startsAt));
 }
@@ -159,10 +185,20 @@ function participantsFor(
 function occurrencesFor(event: CalendarEvent, rangeStartsAt: number, rangeEndsAt: number): CalendarEvent[] {
   if (!event.recurrence) return [event];
   const duration = Date.parse(event.endsAt) - Date.parse(event.startsAt);
-  return Array.from({ length: event.recurrence.occurrenceCount }, (_, index) => {
-    const startsAt = Date.parse(event.startsAt) + index * 7 * 24 * 60 * 60_000;
-    return calendarOccurrence(event, startsAt, duration);
-  }).filter((occurrence) => Date.parse(occurrence.endsAt) > rangeStartsAt && Date.parse(occurrence.startsAt) < rangeEndsAt);
+  const exceptionsByOriginalStart = new Map(event.recurrence.exceptions.map((exception) => [exception.originalStartsAt, exception]));
+  const regularOccurrences = Array.from({ length: event.recurrence.occurrenceCount }, (_, index) => {
+    const startsAt = addWeeksAtLocalTime(event.startsAt, event.timeZone, index);
+    if (exceptionsByOriginalStart.has(startsAt)) return undefined;
+    return calendarOccurrence(event, Date.parse(startsAt), duration);
+  }).filter((occurrence): occurrence is CalendarEvent => Boolean(occurrence));
+  const exceptionOccurrences = event.recurrence.exceptions.map((exception) => ({
+    ...event,
+    id: event.id + "-exception-" + exception.originalStartsAt,
+    startsAt: exception.startsAt,
+    endsAt: exception.endsAt
+  }));
+  return [...regularOccurrences, ...exceptionOccurrences]
+    .filter((occurrence) => Date.parse(occurrence.endsAt) > rangeStartsAt && Date.parse(occurrence.startsAt) < rangeEndsAt);
 }
 
 function calendarOccurrence(event: CalendarEvent, startsAt: number, duration: number): CalendarEvent {
@@ -188,7 +224,7 @@ function candidateForInterval(
 
   const intersectsBusyTime = participants.some(({ person, profile }) =>
     events
-      .filter((event) => event.status !== "draft" && event.attendeeIds.includes(person.id))
+      .filter((event) => (event.status === "confirmed" || event.status === "tentative") && event.attendeeIds.includes(person.id))
       .some((event) => overlaps(interval, eventIntervalWithBuffer(event, profile)))
   );
   const intersectsRecurringFocusTime = participants.some(({ person, profile }) => overlapsRecurringFocusBlock(interval, person, profile));
@@ -233,6 +269,30 @@ function recurringWarnings(candidates: readonly ScheduleCandidate[], occurrenceC
   return [...counts.entries()]
     .map(([warning, count]) => count === occurrenceCount ? warning : count + " of " + occurrenceCount + " occurrences: " + warning)
     .slice(0, 6);
+}
+
+function findExceptionCandidate(
+  events: readonly CalendarEvent[],
+  participants: readonly Participant[],
+  request: Pick<ScheduleRequest, "officeId">,
+  original: CandidateInterval
+): ScheduleCandidate | null {
+  const duration = Date.parse(original.endsAt) - Date.parse(original.startsAt);
+  const originalStart = Date.parse(original.startsAt);
+  const scanStart = roundedUpToQuarterHour(originalStart - 4 * 60 * 60_000);
+  const scanEnd = originalStart + 20 * 60 * 60_000;
+  let best: ScheduleCandidate | null = null;
+  for (let startsAt = scanStart; startsAt + duration <= scanEnd; startsAt += 15 * 60_000) {
+    const candidate = candidateForInterval(events, participants, request, {
+      startsAt: new Date(startsAt).toISOString(),
+      endsAt: new Date(startsAt + duration).toISOString()
+    });
+    if (!candidate) continue;
+    if (!best || candidate.score > best.score || (candidate.score === best.score && Math.abs(startsAt - originalStart) < Math.abs(Date.parse(best.startsAt) - originalStart))) {
+      best = candidate;
+    }
+  }
+  return best;
 }
 
 export function proposeSchedule(
@@ -280,31 +340,60 @@ export function proposeRecurringSchedule(
   const rangeEnd = Date.parse(request.rangeEndsAt);
   const calendarEvents = expandedEvents(events, rangeStart, rangeEnd);
   const candidates: RecurringScheduleCandidate[] = [];
+  let firstRecurringDay: string | undefined;
 
   for (let startsAt = roundedUpToQuarterHour(rangeStart); startsAt + durationMilliseconds + (request.recurrence.occurrenceCount - 1) * 7 * 24 * 60 * 60_000 <= rangeEnd; startsAt += 15 * 60_000) {
     const firstInterval = {
       startsAt: new Date(startsAt).toISOString(),
       endsAt: new Date(startsAt + durationMilliseconds).toISOString()
     };
-    if (weekdayFor(firstInterval.startsAt, activeUser.timeZone) !== request.recurrence.weekday) continue;
-    const occurrenceCandidates = Array.from({ length: request.recurrence.occurrenceCount }, (_, index) => {
-      const occurrenceStartsAt = startsAt + index * 7 * 24 * 60 * 60_000;
-      return candidateForInterval(calendarEvents, participants, request, {
-        startsAt: new Date(occurrenceStartsAt).toISOString(),
-        endsAt: new Date(occurrenceStartsAt + durationMilliseconds).toISOString()
-      });
-    });
-    if (occurrenceCandidates.some((candidate) => !candidate)) continue;
-    const validOccurrences = occurrenceCandidates as ScheduleCandidate[];
+    if (weekdayFor(firstInterval.startsAt, activeUser.timeZone) !== request.recurrence.weekday) {
+      if (firstRecurringDay) break;
+      continue;
+    }
+    const candidateDay = localDay(firstInterval.startsAt, activeUser.timeZone);
+    if (!firstRecurringDay) firstRecurringDay = candidateDay;
+    if (candidateDay !== firstRecurringDay) break;
+    const validOccurrences: ScheduleCandidate[] = [];
+    const exceptions: Array<{ originalStartsAt: string; startsAt: string; endsAt: string }> = [];
+    let hasUnresolvedConflict = false;
+    for (let index = 0; index < request.recurrence.occurrenceCount; index += 1) {
+      const occurrenceStartsAt = addWeeksAtLocalTime(firstInterval.startsAt, activeUser.timeZone, index);
+      const original = {
+        startsAt: occurrenceStartsAt,
+        endsAt: new Date(Date.parse(occurrenceStartsAt) + durationMilliseconds).toISOString()
+      };
+      const candidate = candidateForInterval(calendarEvents, participants, request, original);
+      if (candidate) {
+        validOccurrences.push(candidate);
+        continue;
+      }
+      if (exceptions.length >= request.maxExceptions) {
+        hasUnresolvedConflict = true;
+        break;
+      }
+      const exception = findExceptionCandidate(calendarEvents, participants, request, original);
+      if (!exception) {
+        hasUnresolvedConflict = true;
+        break;
+      }
+      validOccurrences.push(exception);
+      exceptions.push({ originalStartsAt: original.startsAt, startsAt: exception.startsAt, endsAt: exception.endsAt });
+    }
+    if (hasUnresolvedConflict) continue;
     const sharedReasons = [...new Set(validOccurrences.flatMap((candidate) => candidate.reasons))]
       .filter((reason) => reason !== "Fits everyone’s working hours and travel buffers.")
       .slice(0, 4);
     candidates.push(recurringScheduleCandidateSchema.parse({
       ...firstInterval,
       score: Math.round(validOccurrences.reduce((total, candidate) => total + candidate.score, 0) / validOccurrences.length),
-      recurrence: request.recurrence,
+      recurrence: { ...request.recurrence, exceptions },
       occurrences: validOccurrences.map(({ startsAt: occurrenceStartsAt, endsAt }) => ({ startsAt: occurrenceStartsAt, endsAt })),
-      reasons: ["All " + request.recurrence.occurrenceCount + " weekly " + request.recurrence.weekday + " occurrences fit working hours, protected focus time, and travel buffers.", ...sharedReasons].slice(0, 10),
+      reasons: [
+        "All " + request.recurrence.occurrenceCount + " weekly " + request.recurrence.weekday + " occurrences fit working hours, protected focus time, and travel buffers.",
+        ...(exceptions.length > 0 ? [exceptions.length + " one-off exception" + (exceptions.length === 1 ? " keeps an existing meeting unchanged." : "s keep existing meetings unchanged.")] : []),
+        ...sharedReasons
+      ].slice(0, 10),
       warnings: recurringWarnings(validOccurrences, request.recurrence.occurrenceCount)
     }));
   }

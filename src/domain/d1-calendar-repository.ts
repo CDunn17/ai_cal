@@ -18,6 +18,30 @@ export class D1CalendarRepository {
     return this.withStore((store) => store.proposeRecurring(activeUserId, input));
   }
 
+  async eventsInRange(activeUserId: string, input: unknown) {
+    return this.withStore((store) => store.eventsInRange(activeUserId, input));
+  }
+
+  async proposeTimeAway(activeUserId: string, input: unknown) {
+    return this.withStore((store) => store.proposeTimeAway(activeUserId, input));
+  }
+
+  async createTimeAwayChangeSet(activeUserId: string, input: unknown) {
+    return this.withStore((store) => store.createTimeAwayChangeSet(activeUserId, input));
+  }
+
+  async discardTimeAwayChangeSet(activeUserId: string, changeSetId: string, expectedRevision: unknown) {
+    return this.withStore((store) => store.discardTimeAwayChangeSet(activeUserId, changeSetId, expectedRevision));
+  }
+
+  async prepareTimeAwayChangeSetCommit(activeUserId: string, changeSetId: string, expectedRevision: unknown) {
+    return this.withStore((store) => store.prepareTimeAwayChangeSetCommit(activeUserId, changeSetId, expectedRevision));
+  }
+
+  async commitTimeAwayChangeSet(activeUserId: string, changeSetId: string, input: unknown, idempotencyKey: string) {
+    return this.withStore((store) => store.commitTimeAwayChangeSet(activeUserId, changeSetId, input, idempotencyKey));
+  }
+
   async schedulingProfileFor(activeUserId: string, personId: string) {
     return this.withStore((store) => store.schedulingProfileFor(activeUserId, personId));
   }

@@ -44,8 +44,14 @@ Close with:
 
 Optional alternate prompt for the recurring-series capability:
 
-> Find a 30-minute weekly touchpoint with Sam on Tuesdays for the next four weeks. Honor his morning preference where possible and schedule around my calendar and vacations. Create a draft only.
+> Add a weekly recurring check-in with Sam for the next six months. Respect his preferences where possible, but do not reschedule any of my existing meetings. Create a draft only.
 
-Show `propose_recurring_schedule` checking each of the four occurrences, then the resulting weekly-series draft. Emphasize that it cannot reveal the private details that make an occurrence unavailable, create a committed series, or send invitations.
+Show `propose_recurring_schedule` checking all 26 occurrences, then point out the one compact exception that moves only the check-in around Alex’s seeded Board briefing. Emphasize that it cannot reveal private blocking details, move an existing event, create a committed series, or send invitations.
+
+Optional time-away prompt:
+
+> Add my vacation for the week of October 12th. Cancel all meetings that week except Team standup, and transfer that to Maya while I’m out. Create a draft only.
+
+Show `get_events_in_range`, `propose_time_away_changes`, and `create_time_away_change_set_draft`. The resulting panel should show a single before/after plan: private Vacation, two cancellations, and Team standup transferred to approved delegate Maya. Open its confirmation dialog but do not apply it in the recording unless you also show the audit trail. Emphasize that the agent only staged the plan and no notifications are sent.
 
 Before recording, use the deployed URL, start from the seeded state, and confirm the browser shows origin isolation and registered tools.

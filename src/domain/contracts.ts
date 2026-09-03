@@ -61,11 +61,25 @@ export const calendarSchema = z.object({
 });
 
 export const eventVisibilitySchema = z.enum(["public", "private"]);
-export const eventStatusSchema = z.enum(["confirmed", "tentative", "draft"]);
-export const weeklyRecurrenceSchema = z.object({
+export const eventStatusSchema = z.enum(["confirmed", "tentative", "draft", "cancelled"]);
+export const recurrenceExceptionSchema = z.object({
+  originalStartsAt: z.string().datetime({ offset: true }),
+  startsAt: z.string().datetime({ offset: true }),
+  endsAt: z.string().datetime({ offset: true })
+}).refine((exception) => Date.parse(exception.endsAt) > Date.parse(exception.startsAt), {
+  message: "A recurrence exception must end after it starts.",
+  path: ["endsAt"]
+});
+
+export const weeklyRecurrenceRequestSchema = z.object({
   frequency: z.literal("weekly"),
   weekday: weekdaySchema,
-  occurrenceCount: z.number().int().min(2).max(12)
+  occurrenceCount: z.number().int().min(2).max(26)
+});
+
+export const weeklyRecurrenceSchema = z.object({
+  ...weeklyRecurrenceRequestSchema.shape,
+  exceptions: z.array(recurrenceExceptionSchema).max(4).default([])
 });
 
 const eventFieldsSchema = z.object({
@@ -117,7 +131,8 @@ export const scheduleRequestSchema = z
   });
 
 export const recurringScheduleRequestSchema = scheduleRequestSchema.extend({
-  recurrence: weeklyRecurrenceSchema
+  recurrence: weeklyRecurrenceRequestSchema,
+  maxExceptions: z.number().int().min(0).max(4).default(0)
 });
 
 export const scheduleCandidateSchema = z.object({
@@ -133,7 +148,33 @@ export const recurringScheduleCandidateSchema = scheduleCandidateSchema.extend({
   occurrences: z.array(z.object({
     startsAt: z.string().datetime({ offset: true }),
     endsAt: z.string().datetime({ offset: true })
-  })).min(2).max(12)
+  })).min(2).max(26)
+});
+
+export const timeAwayInputSchema = z.object({
+  startsAt: z.string().datetime({ offset: true }),
+  endsAt: z.string().datetime({ offset: true }),
+  title: z.string().min(1).max(140).default("Vacation"),
+  transferEventIds: z.array(z.string().min(1)).max(10).default([]),
+  transferToUserId: z.string().min(1).optional()
+}).refine((input) => Date.parse(input.endsAt) > Date.parse(input.startsAt), {
+  message: "Time away must end after it starts.",
+  path: ["endsAt"]
+}).refine((input) => input.transferEventIds.length === 0 || Boolean(input.transferToUserId), {
+  message: "Choose a delegate for transferred events.",
+  path: ["transferToUserId"]
+});
+
+export const timeAwayChangeSetSchema = z.object({
+  id: z.string().min(1),
+  ownerId: z.string().min(1),
+  revision: z.number().int().positive(),
+  createdAt: z.string().datetime({ offset: true }),
+  expiresAt: z.string().datetime({ offset: true }),
+  status: z.literal("pending"),
+  timeAwayEvent: calendarEventSchema,
+  cancellations: z.array(z.object({ eventId: z.string().min(1), expectedRevision: z.number().int().positive() })).max(20),
+  transfers: z.array(z.object({ eventId: z.string().min(1), expectedRevision: z.number().int().positive(), newOwnerId: z.string().min(1) })).max(10)
 });
 
 export const eventDraftSchema = z.object({
@@ -154,6 +195,14 @@ export const draftCommitConfirmationSchema = z.object({
   expiresAt: z.string().datetime({ offset: true })
 });
 
+export const changeSetCommitConfirmationSchema = z.object({
+  id: z.string().min(1),
+  changeSetId: z.string().min(1),
+  ownerId: z.string().min(1),
+  changeSetRevision: z.number().int().positive(),
+  expiresAt: z.string().datetime({ offset: true })
+});
+
 export const commitDraftInputSchema = z.object({
   expectedRevision: z.number().int().positive(),
   confirmationId: z.string().uuid()
@@ -166,11 +215,18 @@ export const commitReceiptSchema = z.object({
   event: calendarEventSchema
 });
 
+export const changeSetCommitReceiptSchema = z.object({
+  key: z.string().min(16).max(128),
+  ownerId: z.string().min(1),
+  changeSetId: z.string().min(1),
+  events: z.array(calendarEventSchema).min(1).max(32)
+});
+
 export const auditEntrySchema = z.object({
   id: z.string().min(1),
   actor: z.literal("human"),
   actorId: z.string().min(1),
-  action: z.enum(["created", "updated", "moved", "drafted", "discarded", "committed"]),
+  action: z.enum(["created", "updated", "moved", "drafted", "discarded", "committed", "cancelled", "transferred", "time_away"]),
   targetId: z.string().min(1),
   summary: z.string().min(1).max(240),
   createdAt: z.string().datetime({ offset: true })
@@ -196,9 +252,14 @@ export type UpdateEventInput = z.infer<typeof updateEventInputSchema>;
 export type AuditEntry = z.infer<typeof auditEntrySchema>;
 export type ScheduleRequest = z.infer<typeof scheduleRequestSchema>;
 export type WeeklyRecurrence = z.infer<typeof weeklyRecurrenceSchema>;
+export type WeeklyRecurrenceRequest = z.infer<typeof weeklyRecurrenceRequestSchema>;
 export type RecurringScheduleRequest = z.infer<typeof recurringScheduleRequestSchema>;
 export type ScheduleCandidate = z.infer<typeof scheduleCandidateSchema>;
 export type RecurringScheduleCandidate = z.infer<typeof recurringScheduleCandidateSchema>;
 export type EventDraft = z.infer<typeof eventDraftSchema>;
 export type DraftCommitConfirmation = z.infer<typeof draftCommitConfirmationSchema>;
+export type ChangeSetCommitConfirmation = z.infer<typeof changeSetCommitConfirmationSchema>;
 export type CommitReceipt = z.infer<typeof commitReceiptSchema>;
+export type ChangeSetCommitReceipt = z.infer<typeof changeSetCommitReceiptSchema>;
+export type TimeAwayInput = z.infer<typeof timeAwayInputSchema>;
+export type TimeAwayChangeSet = z.infer<typeof timeAwayChangeSetSchema>;

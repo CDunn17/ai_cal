@@ -92,6 +92,15 @@ export default {
       if (request.method === "POST" && url.pathname === "/api/recurring-proposals") {
         return apiResponse({ proposals: await calendarStore.proposeRecurring(activeDemoUserId, await requestJson(request)) });
       }
+      if (request.method === "POST" && url.pathname === "/api/calendar-events-in-range") {
+        return apiResponse({ events: await calendarStore.eventsInRange(activeDemoUserId, await requestJson(request)) });
+      }
+      if (request.method === "POST" && url.pathname === "/api/time-away-proposals") {
+        return apiResponse({ plan: await calendarStore.proposeTimeAway(activeDemoUserId, await requestJson(request)) });
+      }
+      if (request.method === "POST" && url.pathname === "/api/time-away-change-sets") {
+        return apiResponse({ changeSet: await calendarStore.createTimeAwayChangeSet(activeDemoUserId, await requestJson(request)) }, { status: 201 });
+      }
       if (request.method === "POST" && url.pathname === "/api/event-drafts") {
         return apiResponse({ draft: await calendarStore.createDraft(activeDemoUserId, await requestJson(request)) }, { status: 201 });
       }
@@ -124,6 +133,23 @@ export default {
             : undefined;
         await calendarStore.discardDraft(activeDemoUserId, decodeURIComponent(draftMatch[1]), expectedRevision);
         return apiResponse({ discarded: true });
+      }
+      const changeSetMatch = url.pathname.match(/^\/api\/time-away-change-sets\/([^/]+)$/);
+      if (request.method === "DELETE" && changeSetMatch) {
+        const body = await requestJson(request);
+        const expectedRevision = body && typeof body === "object" && "expectedRevision" in body ? body.expectedRevision : undefined;
+        await calendarStore.discardTimeAwayChangeSet(activeDemoUserId, decodeURIComponent(changeSetMatch[1]), expectedRevision);
+        return apiResponse({ discarded: true });
+      }
+      const changeSetConfirmationMatch = url.pathname.match(/^\/api\/time-away-change-sets\/([^/]+)\/commit-confirmation$/);
+      if (request.method === "POST" && changeSetConfirmationMatch) {
+        const body = await requestJson(request);
+        const expectedRevision = body && typeof body === "object" && "expectedRevision" in body ? body.expectedRevision : undefined;
+        return apiResponse({ confirmation: await calendarStore.prepareTimeAwayChangeSetCommit(activeDemoUserId, decodeURIComponent(changeSetConfirmationMatch[1]), expectedRevision) });
+      }
+      const changeSetCommitMatch = url.pathname.match(/^\/api\/time-away-change-sets\/([^/]+)\/commit$/);
+      if (request.method === "POST" && changeSetCommitMatch) {
+        return apiResponse({ events: await calendarStore.commitTimeAwayChangeSet(activeDemoUserId, decodeURIComponent(changeSetCommitMatch[1]), await requestJson(request), idempotencyKey(request)) }, { status: 201 });
       }
     } catch (error) {
       return errorResponse(error);

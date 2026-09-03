@@ -29,7 +29,8 @@ The demo should make four things unmistakable:
 - Plan a new meeting through an ordinary dialog: title, duration, attendees, meeting office, and target-date flexibility or a deadline.
 - Clickable team profiles with bounded meeting preferences, recurring focus blocks, office/remote work patterns, and two deterministic office locations with fixed inter-office travel feedback.
 - Event details with attendees, agenda, location, visibility, and scheduling notes.
-- Reviewable weekly-series drafts that show their weekday and bounded occurrence count.
+- Reviewable weekly-series drafts with up to 26 occurrences and up to four explicit one-off reschedules that preserve existing meetings.
+- Time-away change-set drafts that compactly stage a private absence, owned-event cancellations, and approved-delegate transfers before human confirmation.
 - A **Proposals** surface showing agent-created candidates and a before/after diff.
 - An **Activity** rail recording the tools used, the inputs supplied, the result, and the human approval or rejection.
 - Discard for uncommitted drafts.
@@ -42,11 +43,14 @@ The tools expose stable application intent and structured data—not components,
 | --- | --- | --- |
 | `get_calendar_context` | No | Returns calendar identities, bounded team-member IDs/names, a bounded list of pending drafts, and a visible-event count—never profile details or a full event list. |
 | `get_user_scheduling_profile` | No | Returns one team member’s bounded scheduling profile: requested meeting preferences, office/remote week pattern, and recurring focus blocks. It never returns a home address, live location, or calendar events. |
+| `get_events_in_range` | No | Returns at most ten active events owned by the active user in the supplied range. It never returns another person’s private events or events the active user cannot change. |
 | `find_availability` | No | Finds feasible time windows for a supplied attendee set and constraints, with optional office travel feedback. Results are minimised busy/free summaries, never another person’s private event details. |
 | `propose_schedule` | No | Ranks candidate slots and explains the relevant trade-offs: focus time, work hours, buffers, fixed office travel, and timezone fairness. |
-| `propose_recurring_schedule` | No | Finds one weekly time that is feasible across 2–12 named occurrences in a bounded range, checking every occurrence against busy time, focus blocks, work patterns, travel buffers, and preferences. |
+| `propose_recurring_schedule` | No | Finds one weekly time that is feasible across 2–26 named occurrences. It can use at most four explicit one-off reschedules to preserve existing meetings, while checking every occurrence against busy time, focus blocks, work patterns, travel buffers, and preferences. |
+| `propose_time_away_changes` | No | Previews a private time-away block plus cancellation of the active user’s owned meetings in range, with selected events transferred only to an approved delegate. |
+| `create_time_away_change_set_draft` | Draft only | Creates one visible, expiring change-set draft. It cannot apply cancellations/transfers or send notifications. |
 | `get_event_details` | No | Returns a single event only when it is visible to the active user. |
-| `create_event_draft` | Draft only | Creates a visible, server-validated one-time or bounded weekly-series draft with a 24-hour expiry. It cannot send invitations. |
+| `create_event_draft` | Draft only | Creates a visible, server-validated one-time or bounded weekly-series draft with a 24-hour expiry. A series can contain 2–26 weekly occurrences and at most four reviewed exceptions. It cannot send invitations. |
 | `update_event_draft` | Draft only | Changes an existing draft by ID and returns a compact, current draft projection. |
 | `commit_event` | Currently blocked | Registered to explain the confirmation boundary; it cannot commit a draft or send invitations. The separate human UI owns the visible confirmation flow. |
 | `discard_event_draft` | Yes, reversible | Deletes a pending draft owned by the active user. |
@@ -59,7 +63,7 @@ Where a response identifies a calendar item, it includes a stable ID and current
 The first version is a scheduling collaboration demo, not a clone of Google Calendar.
 
 - **In scope:** a polished calendar for one seeded team, deterministic scheduling rules, visible proposals/drafts, WebMCP tools, audit history, and a public deployed demo.
-- **Deferred:** Google/Microsoft OAuth, advanced recurrence exceptions (changes/cancellations per occurrence), email delivery infrastructure, external contacts, natural-language parsing inside the app, native mobile apps, and autonomous rescheduling.
+- **Deferred:** Google/Microsoft OAuth, recurring-series cancellation/R.S.V.P. workflows, email delivery infrastructure, external contacts, natural-language parsing inside the app, native mobile apps, and autonomous rescheduling.
 - **Demo data:** use fictional people, event names, and calendars. No production calendar data or credentials are required to judge the project.
 
 ## Architecture
@@ -121,8 +125,13 @@ Milestones 2 and 3 run a deterministic, fictional demo identity (Alex) through t
 | PATCH /api/events/:id | Edits or moves an event only on the active user’s calendar. Every request includes the reviewed revision; stale writes are rejected with 409 Conflict. |
 | GET /api/team-members/:id/scheduling-profile | Returns one visible team member’s validated, scheduling-only profile. It excludes home address, live location, and all calendar-event content. |
 | POST /api/proposals | Searches 15-minute slots using working hours, protected busy time, recurring focus blocks, profile travel buffers, and profile meeting preferences. An optional selected office yields fixed, work-pattern-aware travel feedback. Results contain free/busy-derived reasons and warnings, never a private event’s details. |
-| POST /api/recurring-proposals | Searches a bounded 2–12 occurrence weekly series and returns only times that are feasible for every occurrence. It uses the same private busy redaction and scheduling profile constraints as one-time proposals. |
-| POST /api/event-drafts | Creates a separate, 24-hour reviewable one-time or weekly-series draft on the active user’s calendar. A series has one weekday and 2–12 occurrences, remains out of the committed event collection, and cannot send invitations. |
+| POST /api/recurring-proposals | Searches a bounded 2–26 occurrence local-time weekly series. It may return up to four one-off reschedules that avoid a conflict without changing the existing event. It uses the same private busy redaction and scheduling profile constraints as one-time proposals. |
+| POST /api/calendar-events-in-range | Returns a bounded list of active events owned by the active user, for a reviewed change plan only. |
+| POST /api/time-away-proposals | Previews the exact owned events a time-away plan would cancel or transfer. This is read-only. |
+| POST /api/time-away-change-sets | Creates an expiring, reviewable change-set draft containing a private absence block, cancellations, and approved-delegate transfers. |
+| POST /api/time-away-change-sets/:id/commit-confirmation | Creates a five-minute, one-time human confirmation for a reviewed time-away change set. |
+| POST /api/time-away-change-sets/:id/commit | Applies a currently confirmed change set atomically after every affected event revision is rechecked. It never sends notifications. |
+| POST /api/event-drafts | Creates a separate, 24-hour reviewable one-time or weekly-series draft on the active user’s calendar. A series has one weekday, 2–26 occurrences, and at most four reviewed exceptions; it remains out of the committed event collection and cannot send invitations. |
 | PATCH /api/event-drafts/:id | Updates a visible draft by current revision, preserving draft-only status. |
 | DELETE /api/event-drafts/:id | Discards a pending draft only when its current revision is supplied. |
 | POST /api/event-drafts/:id/commit-confirmation | Creates a five-minute, one-time confirmation for a visible draft at the revision the person reviewed. This only prepares the visible confirmation dialog. |
@@ -201,7 +210,7 @@ Exact API shapes may evolve while WebMCP remains a proposed standard, so keep re
 
 ### Current WebMCP adapter
 
-Milestone 4 registers eleven imperative tools from a small browser-only adapter, including bounded one-time and recurring scheduling reads. It uses the official WebMCP TypeScript declarations, registers tools with an AbortController for component-lifecycle cleanup, and makes every tool call visible in the in-app Agent activity rail.
+Milestone 4 registers fourteen imperative tools from a small browser-only adapter, including bounded one-time/recurring scheduling and time-away planning reads. It uses the official WebMCP TypeScript declarations, registers tools with an AbortController for component-lifecycle cleanup, and makes every tool call visible in the in-app Agent activity rail.
 
 - Read tools return a privacy-filtered state projection or scheduling options and carry the read-only annotation.
 - Draft tools call the same Worker commands as the human UI; a successful mutation refreshes the visible calendar state.
@@ -224,9 +233,10 @@ Calendar access is sensitive. These guardrails are product requirements, not pol
 ### Mutation model
 
 - **Read → propose → draft → review → confirm → commit.** No tool skips a state.
-- `find_availability`, `propose_schedule`, `propose_recurring_schedule`, and `resolve_conflict` are read-only.
-- `propose_recurring_schedule` requires a single weekday and a bounded 2–12 occurrence count. It returns no series candidate unless every occurrence fits; it never exposes the private event or vacation details that blocked an occurrence.
+- `find_availability`, `propose_schedule`, `propose_recurring_schedule`, `get_events_in_range`, `propose_time_away_changes`, and `resolve_conflict` are read-only.
+- `propose_recurring_schedule` requires a single weekday and a bounded 2–26 occurrence count. It may create at most four visible one-off exceptions; it never changes an existing meeting or exposes the private event/vacation details that blocked an occurrence.
 - `create_event_draft` and `update_event_draft` only affect drafts owned by the active user and must produce a visible UI artifact. Recurring drafts are weekly only, validate that their first occurrence matches the declared weekday, and remain a single reviewable series draft.
+- `create_time_away_change_set_draft` creates a visible change-set only. An agent cannot cancel, transfer, or notify anyone. The human confirmation rechecks every affected event revision, applies the entire plan together, and records each applied change in the audit trail.
 - `commit_event` is intentionally blocked in the current build. A person can commit only by opening the visible confirmation dialog for a non-expired draft at the reviewed revision; that confirmation is one-time and expires after five minutes.
 - Never let an agent delete a calendar, bulk-edit events, cancel an event, or send invitations without the in-app confirmation in v1.
 - Commit requests require an idempotency key, reject stale confirmations/revisions, retain bounded retry receipts, and rate-limit invalid attempts to three per minute. Human commits and draft changes appear in the audit trail.

@@ -1,4 +1,4 @@
-import type { CalendarEvent, EventDraft, RecurringScheduleCandidate, ScheduleCandidate, SchedulingProfile } from "../domain/contracts";
+import type { CalendarEvent, EventDraft, RecurringScheduleCandidate, ScheduleCandidate, SchedulingProfile, TimeAwayChangeSet } from "../domain/contracts";
 import type { CalendarState } from "../domain/calendar-store";
 
 export type ToolActivity = Readonly<{
@@ -82,6 +82,19 @@ function compactDraft(draft: EventDraft) {
   };
 }
 
+function compactChangeSet(changeSet: TimeAwayChangeSet) {
+  return {
+    changeSetId: changeSet.id,
+    revision: changeSet.revision,
+    expiresAt: changeSet.expiresAt,
+    timeAway: compactEvent(changeSet.timeAwayEvent),
+    cancellationCount: changeSet.cancellations.length,
+    cancellations: changeSet.cancellations.slice(0, 5),
+    transferCount: changeSet.transfers.length,
+    transfers: changeSet.transfers.slice(0, 5)
+  };
+}
+
 function compactCandidates(candidates: ScheduleCandidate[]) {
   return candidates.slice(0, 3).map((candidate) => ({
     startsAt: candidate.startsAt,
@@ -93,13 +106,13 @@ function compactCandidates(candidates: ScheduleCandidate[]) {
 }
 
 function compactRecurringCandidates(candidates: RecurringScheduleCandidate[]) {
-  return candidates.slice(0, 2).map((candidate) => ({
+  return candidates.slice(0, 1).map((candidate) => ({
     startsAt: candidate.startsAt,
     endsAt: candidate.endsAt,
     score: candidate.score,
     recurrence: candidate.recurrence,
     occurrenceCount: candidate.occurrences.length,
-    occurrences: candidate.occurrences.slice(0, 3).map(({ startsAt, endsAt }) => ({ startsAt, endsAt })),
+    occurrences: candidate.occurrences.slice(0, 2).map(({ startsAt, endsAt }) => ({ startsAt, endsAt })),
     reasons: candidate.reasons.slice(0, 2).map((reason) => clip(reason, 140)),
     warnings: candidate.warnings.slice(0, 2).map((warning) => clip(warning, 140))
   }));
@@ -163,15 +176,37 @@ const timeRangeProperties = {
   rangeEndsAt: { type: "string", format: "date-time" }
 };
 
-const weeklyRecurrenceProperties = {
+const weeklyRecurrenceRequestProperties = {
   frequency: { type: "string", enum: ["weekly"] },
   weekday: { type: "string", enum: ["monday", "tuesday", "wednesday", "thursday", "friday"] },
-  occurrenceCount: { type: "integer", minimum: 2, maximum: 12, description: "Bounded number of weekly occurrences to validate and include in the draft." }
+  occurrenceCount: { type: "integer", minimum: 2, maximum: 26, description: "Bounded number of weekly occurrences to validate and include in the draft." }
+};
+
+const weeklyRecurrenceProperties = {
+  ...weeklyRecurrenceRequestProperties,
+  exceptions: {
+    type: "array",
+    maxItems: 4,
+    items: schema({
+      originalStartsAt: { type: "string", format: "date-time" },
+      startsAt: { type: "string", format: "date-time" },
+      endsAt: { type: "string", format: "date-time" }
+    }, ["originalStartsAt", "startsAt", "endsAt"])
+  }
 };
 
 const recurringScheduleProperties = {
   ...timeRangeProperties,
-  recurrence: schema(weeklyRecurrenceProperties, ["frequency", "weekday", "occurrenceCount"])
+  recurrence: schema(weeklyRecurrenceRequestProperties, ["frequency", "weekday", "occurrenceCount"]),
+  maxExceptions: { type: "integer", minimum: 0, maximum: 4, description: "Maximum one-off reschedules the planner may use while preserving all existing events." }
+};
+
+const timeAwayProperties = {
+  startsAt: { type: "string", format: "date-time" },
+  endsAt: { type: "string", format: "date-time" },
+  title: { type: "string", maxLength: 140, description: "Private label for the time-away block. Defaults to Vacation." },
+  transferEventIds: { type: "array", items: { type: "string" }, maxItems: 10, description: "Owned event IDs in the time-away range to retain by transferring to the named approved delegate. All other owned active events in the range are proposed for cancellation." },
+  transferToUserId: { type: "string", description: "Approved delegate user ID. Required only when transferEventIds is non-empty." }
 };
 
 const eventProperties = {
@@ -201,6 +236,7 @@ export const calendarTools: WebMCP.ModelContextTool[] = [
         calendars: state.calendars.map((calendar) => ({ id: calendar.id, name: clip(calendar.name, 80), timeZone: calendar.timeZone })),
         teamMembers: state.people.map((person) => ({ id: person.id, displayName: clip(person.displayName, 80) })),
         pendingDrafts: state.drafts.slice(0, 3).map(compactDraft),
+        pendingTimeAwayChangeSetCount: state.changeSets.length,
         visibleEventCount: state.events.length
       };
     }, {})
@@ -222,6 +258,17 @@ export const calendarTools: WebMCP.ModelContextTool[] = [
       if (Array.isArray(input.include) && include?.length !== input.include.length) throw new Error("One or more requested profile sections are not allowed.");
       const response = await api<{ profile: SchedulingProfile }>("/api/team-members/" + encodeURIComponent(input.userId) + "/scheduling-profile", undefined, signal);
       return { profile: compactSchedulingProfile(response.profile, include) };
+    }, input)
+  },
+  {
+    name: "get_events_in_range",
+    title: "Get owned events in range",
+    description: "Read up to ten active events owned by the active user in a supplied range. It is for a reviewed change plan; it never returns another person’s private event details or events the active user cannot change.",
+    inputSchema: schema({ startsAt: { type: "string", format: "date-time" }, endsAt: { type: "string", format: "date-time" } }, ["startsAt", "endsAt"]),
+    annotations: { readOnlyHint: true, untrustedContentHint: true },
+    execute: async (input, { signal }) => runTool("get_events_in_range", "read", async () => {
+      const response = await api<{ events: CalendarEvent[] }>("/api/calendar-events-in-range", { method: "POST", body: JSON.stringify(input) }, signal);
+      return { events: response.events.slice(0, 10).map(compactEvent) };
     }, input)
   },
   {
@@ -249,12 +296,40 @@ export const calendarTools: WebMCP.ModelContextTool[] = [
   {
     name: "propose_recurring_schedule",
     title: "Propose a recurring schedule",
-    description: "Find a stable weekly time across 2–12 named occurrences in a bounded range. It checks each occurrence against busy time, protected focus blocks, work patterns, travel buffers, and stated preferences. It returns compact series candidates only and never creates or changes events.",
+    description: "Find a stable weekly time across 2–26 named occurrences in a bounded range. It checks each occurrence against busy time, protected focus blocks, work patterns, travel buffers, and stated preferences. A bounded number of one-off exceptions may preserve existing events without moving them. It returns compact series candidates only and never creates or changes events.",
     inputSchema: schema(recurringScheduleProperties, ["attendeeIds", "durationMinutes", "rangeStartsAt", "rangeEndsAt", "recurrence"]),
     annotations: { readOnlyHint: true, untrustedContentHint: true },
     execute: async (input, { signal }) => runTool("propose_recurring_schedule", "read", async () => {
       const response = await api<{ proposals: RecurringScheduleCandidate[] }>("/api/recurring-proposals", { method: "POST", body: JSON.stringify(input) }, signal);
       return { proposals: compactRecurringCandidates(response.proposals) };
+    }, input)
+  },
+  {
+    name: "propose_time_away_changes",
+    title: "Propose time-away changes",
+    description: "Preview a private time-away block plus cancellations for every active event the user owns in its range. Named owned events can instead be transferred only to an approved delegate. This read-only tool does not create, cancel, transfer, notify, or commit anything.",
+    inputSchema: schema(timeAwayProperties, ["startsAt", "endsAt"]),
+    annotations: { readOnlyHint: true, untrustedContentHint: true },
+    execute: async (input, { signal }) => runTool("propose_time_away_changes", "read", async () => {
+      const response = await api<{ plan: { timeAway: { startsAt: string; endsAt: string; title: string }; cancellations: unknown[]; transfers: unknown[] } }>("/api/time-away-proposals", { method: "POST", body: JSON.stringify(input) }, signal);
+      return {
+        timeAway: response.plan.timeAway,
+        cancellationCount: response.plan.cancellations.length,
+        cancellations: response.plan.cancellations.slice(0, 5),
+        transferCount: response.plan.transfers.length,
+        transfers: response.plan.transfers.slice(0, 5)
+      };
+    }, input)
+  },
+  {
+    name: "create_time_away_change_set_draft",
+    title: "Create time-away change-set draft",
+    description: "Create one visible, pending time-away change-set draft from a reviewed plan. It includes a private time-away block, proposed cancellations, and optional transfers to an approved delegate. It never applies changes, sends notifications, or commits events.",
+    inputSchema: schema(timeAwayProperties, ["startsAt", "endsAt"]),
+    annotations: { readOnlyHint: false, untrustedContentHint: true },
+    execute: async (input, { signal }) => runTool("create_time_away_change_set_draft", "draft", async () => {
+      const response = await api<{ changeSet: TimeAwayChangeSet }>("/api/time-away-change-sets", { method: "POST", body: JSON.stringify(input) }, signal);
+      return { changeSet: compactChangeSet(response.changeSet) };
     }, input)
   },
   {
@@ -273,7 +348,7 @@ export const calendarTools: WebMCP.ModelContextTool[] = [
   {
     name: "create_event_draft",
     title: "Create event draft",
-    description: "Create a visible, pending single or bounded weekly-series draft owned by the active user. A weekly series must specify 2–12 occurrences. This never creates a committed event or sends invitations.",
+    description: "Create a visible, pending single or bounded weekly-series draft owned by the active user. A weekly series must specify 2–26 occurrences and at most four reviewed one-off exceptions. This never creates a committed event or sends invitations.",
     inputSchema: schema(eventProperties, ["calendarId", "title", "startsAt", "endsAt", "timeZone", "visibility"]),
     annotations: { readOnlyHint: false, untrustedContentHint: true },
     execute: async (input, { signal }) => runTool("create_event_draft", "draft", async () => {

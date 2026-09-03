@@ -108,6 +108,7 @@ dd { margin: 0; color: #494351; font-size: .87rem; }
 .event-diff strong { color: #4b4457; font-size: .8rem; }
 .event-diff p, .draft-expiry { margin: 4px 0 0; color: #746d7c; font-size: .74rem; line-height: 1.35; }
 .recurrence-note { margin-top: 10px !important; padding: 9px 10px; border: 1px solid #e4dcfa; border-radius: 8px; color: #625380 !important; background: #f7f4ff; font-size: .76rem !important; line-height: 1.4; }
+.exception-note { margin: 7px 0 0 !important; padding: 8px 10px; border-radius: 8px; color: #6b5f43 !important; background: #fff8e8; font-size: .74rem !important; line-height: 1.4; }
 .commit-disabled { grid-column: 1 / -1; padding: 9px 0 0; color: #7f5064; font-size: .73rem; line-height: 1.35; }
 .commit-note { margin: 12px 0 0; color: #746d7c; font-size: .74rem; line-height: 1.4; }
 .profile-details { max-height: calc(100vh - 112px); overflow-y: auto; }

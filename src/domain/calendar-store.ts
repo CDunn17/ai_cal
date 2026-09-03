@@ -1,6 +1,8 @@
 import {
   auditEntrySchema,
   calendarEventSchema,
+  changeSetCommitConfirmationSchema,
+  changeSetCommitReceiptSchema,
   commitDraftInputSchema,
   commitReceiptSchema,
   createEventInputSchema,
@@ -10,14 +12,20 @@ import {
   recurringScheduleRequestSchema,
   scheduleRequestSchema,
   schedulingProfileSchema,
+  timeAwayChangeSetSchema,
+  timeAwayInputSchema,
   updateEventInputSchema,
   type AuditEntry,
   type CalendarEvent,
+  type ChangeSetCommitConfirmation,
+  type ChangeSetCommitReceipt,
   type CommitReceipt,
   type DemoData,
   type DraftCommitConfirmation,
   type EventDraft,
-  type SchedulingProfile
+  type SchedulingProfile,
+  type TimeAwayChangeSet,
+  type TimeAwayInput
 } from "./contracts";
 import { initialSchedulingProfiles } from "./scheduling-profiles";
 import { demoData } from "./seed";
@@ -40,6 +48,7 @@ export type CalendarState = Readonly<{
   calendars: DemoData["calendars"];
   events: CalendarEvent[];
   drafts: EventDraft[];
+  changeSets: TimeAwayChangeSet[];
   auditEntries: AuditEntry[];
 }>;
 
@@ -48,6 +57,9 @@ export type CalendarStoreSnapshot = Readonly<{
   drafts: EventDraft[];
   auditEntries: AuditEntry[];
   commitConfirmations?: DraftCommitConfirmation[];
+  changeSets?: TimeAwayChangeSet[];
+  changeSetConfirmations?: ChangeSetCommitConfirmation[];
+  changeSetCommitReceipts?: ChangeSetCommitReceipt[];
   commitReceipts?: CommitReceipt[];
   commitAttemptTimes?: Readonly<Record<string, string[]>>;
 }>;
@@ -97,6 +109,15 @@ function weekdayForEvent(event: CalendarEvent): string {
   return new Intl.DateTimeFormat("en-US", { timeZone: event.timeZone, weekday: "long" }).format(new Date(event.startsAt)).toLowerCase();
 }
 
+function localEventParts(instant: string, timeZone: string): Record<string, string> {
+  return Object.fromEntries(
+    new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" })
+      .formatToParts(new Date(instant))
+      .filter((part) => part.type !== "literal")
+      .map((part) => [part.type, part.value])
+  );
+}
+
 export class CalendarStore {
   private readonly people;
   private readonly schedulingProfiles;
@@ -105,6 +126,9 @@ export class CalendarStore {
   private readonly drafts = new Map<string, EventDraft>();
   private readonly auditEntries: AuditEntry[] = [];
   private readonly commitConfirmations = new Map<string, DraftCommitConfirmation>();
+  private readonly changeSets = new Map<string, TimeAwayChangeSet>();
+  private readonly changeSetConfirmations = new Map<string, ChangeSetCommitConfirmation>();
+  private readonly changeSetCommitReceipts = new Map<string, ChangeSetCommitReceipt>();
   private readonly commitReceipts = new Map<string, CommitReceipt>();
   private readonly commitAttemptTimes = new Map<string, string[]>();
 
@@ -130,6 +154,18 @@ export class CalendarStore {
       const parsed = draftCommitConfirmationSchema.parse(confirmation);
       store.commitConfirmations.set(parsed.id, parsed);
     }
+    for (const changeSet of snapshot.changeSets ?? []) {
+      const parsed = timeAwayChangeSetSchema.parse(changeSet);
+      store.changeSets.set(parsed.id, parsed);
+    }
+    for (const confirmation of snapshot.changeSetConfirmations ?? []) {
+      const parsed = changeSetCommitConfirmationSchema.parse(confirmation);
+      store.changeSetConfirmations.set(parsed.id, parsed);
+    }
+    for (const receipt of snapshot.changeSetCommitReceipts ?? []) {
+      const parsed = changeSetCommitReceiptSchema.parse(receipt);
+      store.changeSetCommitReceipts.set(parsed.key, parsed);
+    }
     for (const receipt of snapshot.commitReceipts ?? []) {
       const parsed = commitReceiptSchema.parse(receipt);
       store.commitReceipts.set(parsed.key, parsed);
@@ -151,6 +187,9 @@ export class CalendarStore {
       drafts: [...this.drafts.values()],
       auditEntries: this.auditEntries,
       commitConfirmations: [...this.commitConfirmations.values()],
+      changeSets: [...this.changeSets.values()],
+      changeSetConfirmations: [...this.changeSetConfirmations.values()],
+      changeSetCommitReceipts: [...this.changeSetCommitReceipts.values()],
       commitReceipts: [...this.commitReceipts.values()],
       commitAttemptTimes: Object.fromEntries(this.commitAttemptTimes)
     };
@@ -164,11 +203,12 @@ export class CalendarStore {
       people: this.people,
       schedulingProfiles: this.schedulingProfiles,
       calendars: this.calendars,
-      events: [...this.events.values()].map((event) => {
+      events: [...this.events.values()].filter((event) => event.status !== "cancelled").map((event) => {
         const calendar = this.getCalendar(event.calendarId);
         return projectEvent(event, activeUserId, calendar.ownerId);
       }),
       drafts: this.draftsFor(activeUserId),
+      changeSets: this.changeSetsFor(activeUserId),
       auditEntries: this.auditEntries.filter((entry) => entry.actorId === activeUserId)
     };
   }
@@ -193,6 +233,130 @@ export class CalendarStore {
     } catch (error) {
       throw new CalendarStoreError(400, error instanceof Error ? error.message : "Could not produce recurring scheduling options.");
     }
+  }
+
+  eventsInRange(activeUserId: string, input: unknown): CalendarEvent[] {
+    this.assertUser(activeUserId);
+    const parsed = timeAwayInputSchema.parse(input);
+    return this.ownedActiveEventsInRange(activeUserId, parsed.startsAt, parsed.endsAt);
+  }
+
+  proposeTimeAway(activeUserId: string, input: unknown) {
+    this.assertUser(activeUserId);
+    const plan = this.timeAwayPlan(activeUserId, input);
+    return {
+      timeAway: { startsAt: plan.input.startsAt, endsAt: plan.input.endsAt, title: plan.input.title },
+      cancellations: plan.cancellations.map((event) => this.changeEventProjection(event)),
+      transfers: plan.transfers.map(({ event, newOwnerId }) => ({ ...this.changeEventProjection(event), newOwnerId }))
+    };
+  }
+
+  createTimeAwayChangeSet(activeUserId: string, input: unknown): TimeAwayChangeSet {
+    this.assertUser(activeUserId);
+    this.removeExpiredDrafts();
+    const plan = this.timeAwayPlan(activeUserId, input);
+    const calendar = this.calendarForOwner(activeUserId);
+    const timeAwayEvent = this.createOwnedEvent(activeUserId, {
+      calendarId: calendar.id,
+      title: plan.input.title,
+      startsAt: plan.input.startsAt,
+      endsAt: plan.input.endsAt,
+      timeZone: calendar.timeZone,
+      visibility: "private",
+      attendeeIds: [],
+      agenda: "Private time away. This draft changes nothing until human confirmation."
+    }, "draft");
+    const createdAt = new Date().toISOString();
+    const changeSet = timeAwayChangeSetSchema.parse({
+      id: crypto.randomUUID(),
+      ownerId: activeUserId,
+      revision: 1,
+      createdAt,
+      expiresAt: new Date(Date.parse(createdAt) + 24 * 60 * 60_000).toISOString(),
+      status: "pending",
+      timeAwayEvent,
+      cancellations: plan.cancellations.map((event) => ({ eventId: event.id, expectedRevision: event.revision })),
+      transfers: plan.transfers.map(({ event, newOwnerId }) => ({ eventId: event.id, expectedRevision: event.revision, newOwnerId }))
+    });
+    this.changeSets.set(changeSet.id, changeSet);
+    this.recordDraft("drafted", changeSet.id, activeUserId, "Created a reviewable time-away change set for “" + timeAwayEvent.title + "”.");
+    return changeSet;
+  }
+
+  discardTimeAwayChangeSet(activeUserId: string, changeSetId: string, expectedRevision: unknown): void {
+    const changeSet = this.getOwnedChangeSet(activeUserId, changeSetId, expectedRevision, "discarding");
+    this.changeSets.delete(changeSet.id);
+    this.invalidateChangeSetConfirmationsFor(changeSet.id);
+    this.recordDraft("discarded", changeSet.id, activeUserId, "Discarded the time-away change set for “" + changeSet.timeAwayEvent.title + "”.");
+  }
+
+  prepareTimeAwayChangeSetCommit(activeUserId: string, changeSetId: string, expectedRevision: unknown): ChangeSetCommitConfirmation {
+    const changeSet = this.getOwnedChangeSet(activeUserId, changeSetId, expectedRevision, "reviewing");
+    this.invalidateChangeSetConfirmationsFor(changeSet.id);
+    const confirmation = changeSetCommitConfirmationSchema.parse({
+      id: crypto.randomUUID(),
+      changeSetId: changeSet.id,
+      ownerId: activeUserId,
+      changeSetRevision: changeSet.revision,
+      expiresAt: new Date(Date.now() + 5 * 60_000).toISOString()
+    });
+    this.changeSetConfirmations.set(confirmation.id, confirmation);
+    return confirmation;
+  }
+
+  commitTimeAwayChangeSet(activeUserId: string, changeSetId: string, input: unknown, idempotencyKey: string): CalendarEvent[] {
+    this.assertUser(activeUserId);
+    if (idempotencyKey.length < 16 || idempotencyKey.length > 128) {
+      throw new CalendarStoreError(400, "An Idempotency-Key between 16 and 128 characters is required to apply a time-away change set.");
+    }
+    const receipt = this.changeSetCommitReceipts.get(idempotencyKey);
+    if (receipt) {
+      if (receipt.ownerId !== activeUserId || receipt.changeSetId !== changeSetId) {
+        throw new CalendarStoreError(409, "This idempotency key belongs to a different time-away change set.");
+      }
+      return receipt.events;
+    }
+    this.recordCommitAttempt(activeUserId);
+    const parsed = commitDraftInputSchema.parse(input);
+    const changeSet = this.getOwnedChangeSet(activeUserId, changeSetId, parsed.expectedRevision, "committing");
+    const confirmation = this.changeSetConfirmations.get(parsed.confirmationId);
+    if (!confirmation || confirmation.changeSetId !== changeSet.id || confirmation.ownerId !== activeUserId || confirmation.changeSetRevision !== changeSet.revision || Date.parse(confirmation.expiresAt) <= Date.now()) {
+      throw new CalendarStoreError(409, "This confirmation is no longer valid. Review the time-away changes again before applying them.");
+    }
+    const affected = [...changeSet.cancellations, ...changeSet.transfers].map((operation) => this.getOwnedActiveEvent(activeUserId, operation.eventId, operation.expectedRevision));
+    const events: CalendarEvent[] = [];
+    const timeAwayEvent = calendarEventSchema.parse({ ...changeSet.timeAwayEvent, status: "confirmed" });
+    this.events.set(timeAwayEvent.id, timeAwayEvent);
+    events.push(timeAwayEvent);
+    this.record("time_away", timeAwayEvent, activeUserId);
+    for (const operation of changeSet.cancellations) {
+      const event = affected.find((candidate) => candidate.id === operation.eventId)!;
+      const cancelled = calendarEventSchema.parse({ ...event, status: "cancelled", revision: event.revision + 1 });
+      this.events.set(cancelled.id, cancelled);
+      this.record("cancelled", cancelled, activeUserId);
+    }
+    for (const operation of changeSet.transfers) {
+      const event = affected.find((candidate) => candidate.id === operation.eventId)!;
+      const cancelled = calendarEventSchema.parse({ ...event, status: "cancelled", revision: event.revision + 1 });
+      this.events.set(cancelled.id, cancelled);
+      const targetCalendar = this.calendarForOwner(operation.newOwnerId);
+      const transferred = calendarEventSchema.parse({
+        ...event,
+        id: crypto.randomUUID(),
+        calendarId: targetCalendar.id,
+        revision: 1,
+        status: "confirmed",
+        attendeeIds: [...new Set([...event.attendeeIds.filter((id) => id !== activeUserId), operation.newOwnerId])]
+      });
+      this.events.set(transferred.id, transferred);
+      events.push(transferred);
+      this.record("transferred", transferred, activeUserId);
+    }
+    this.changeSets.delete(changeSet.id);
+    this.changeSetConfirmations.delete(confirmation.id);
+    this.changeSetCommitReceipts.set(idempotencyKey, changeSetCommitReceiptSchema.parse({ key: idempotencyKey, ownerId: activeUserId, changeSetId, events }));
+    this.trimChangeSetCommitReceipts();
+    return events;
   }
 
   schedulingProfileFor(activeUserId: string, personId: string): SchedulingProfile {
@@ -385,7 +549,19 @@ export class CalendarStore {
   }
 
   private record(action: AuditEntry["action"], event: CalendarEvent, activeUserId: string): void {
-    const actionVerb = action === "created" ? "Created" : action === "moved" ? "Moved" : action === "committed" ? "Committed" : "Updated";
+    const actionVerb = action === "created"
+      ? "Created"
+      : action === "moved"
+        ? "Moved"
+        : action === "committed"
+          ? "Committed"
+          : action === "cancelled"
+            ? "Cancelled"
+            : action === "transferred"
+              ? "Transferred"
+              : action === "time_away"
+                ? "Added time away for"
+                : "Updated";
     this.auditEntries.unshift(
       auditEntrySchema.parse({
         id: crypto.randomUUID(),
@@ -417,6 +593,44 @@ export class CalendarStore {
     return [...this.drafts.values()].filter((draft) => draft.ownerId === activeUserId);
   }
 
+  private changeSetsFor(activeUserId: string) {
+    return [...this.changeSets.values()].filter((changeSet) => changeSet.ownerId === activeUserId);
+  }
+
+  private ownedActiveEventsInRange(activeUserId: string, startsAt: string, endsAt: string): CalendarEvent[] {
+    const range = { startsAt, endsAt };
+    return [...this.events.values()]
+      .filter((event) => {
+        const calendar = this.getCalendar(event.calendarId);
+        return calendar.ownerId === activeUserId && (event.status === "confirmed" || event.status === "tentative") && Date.parse(event.startsAt) < Date.parse(range.endsAt) && Date.parse(range.startsAt) < Date.parse(event.endsAt);
+      })
+      .sort((left, right) => Date.parse(left.startsAt) - Date.parse(right.startsAt));
+  }
+
+  private timeAwayPlan(activeUserId: string, input: unknown): {
+    input: TimeAwayInput;
+    cancellations: CalendarEvent[];
+    transfers: Array<{ event: CalendarEvent; newOwnerId: string }>;
+  } {
+    const parsed = timeAwayInputSchema.parse(input);
+    const affectedEvents = this.ownedActiveEventsInRange(activeUserId, parsed.startsAt, parsed.endsAt);
+    const transferIds = new Set(parsed.transferEventIds);
+    const unknownTransfer = parsed.transferEventIds.find((eventId) => !affectedEvents.some((event) => event.id === eventId));
+    if (unknownTransfer) throw new CalendarStoreError(400, "A requested transfer must be an active event owned by you during the time-away range.");
+    if (transferIds.size > 0) this.assertAuthorizedDelegate(activeUserId, parsed.transferToUserId!);
+    return {
+      input: parsed,
+      cancellations: affectedEvents.filter((event) => !transferIds.has(event.id)),
+      transfers: affectedEvents
+        .filter((event) => transferIds.has(event.id))
+        .map((event) => ({ event, newOwnerId: parsed.transferToUserId! }))
+    };
+  }
+
+  private changeEventProjection(event: CalendarEvent) {
+    return { id: event.id, revision: event.revision, title: event.title, startsAt: event.startsAt, endsAt: event.endsAt };
+  }
+
   private removeExpiredDrafts(): void {
     const now = Date.now();
     for (const [id, draft] of this.drafts) {
@@ -429,6 +643,17 @@ export class CalendarStore {
         this.commitConfirmations.delete(id);
       }
     }
+    for (const [id, changeSet] of this.changeSets) {
+      if (Date.parse(changeSet.expiresAt) <= now) {
+        this.changeSets.delete(id);
+        this.invalidateChangeSetConfirmationsFor(id);
+      }
+    }
+    for (const [id, confirmation] of this.changeSetConfirmations) {
+      if (Date.parse(confirmation.expiresAt) <= now || !this.changeSets.has(confirmation.changeSetId)) {
+        this.changeSetConfirmations.delete(id);
+      }
+    }
   }
 
   private getOwnedDraft(activeUserId: string, draftId: string, expectedRevision: unknown, action: "reviewing" | "committing"): EventDraft {
@@ -439,6 +664,17 @@ export class CalendarStore {
       throw new CalendarStoreError(409, `This draft changed. Refresh and review it before ${action}.`);
     }
     return draft;
+  }
+
+  private getOwnedChangeSet(activeUserId: string, changeSetId: string, expectedRevision: unknown, action: "reviewing" | "committing" | "discarding"): TimeAwayChangeSet {
+    this.removeExpiredDrafts();
+    const changeSet = this.changeSets.get(changeSetId);
+    if (!changeSet) throw new CalendarStoreError(404, "Time-away change set not found or already expired.");
+    if (changeSet.ownerId !== activeUserId) throw new CalendarStoreError(403, "You can only review your own time-away change set.");
+    if (typeof expectedRevision !== "number" || !Number.isInteger(expectedRevision) || expectedRevision !== changeSet.revision) {
+      throw new CalendarStoreError(409, "This time-away change set changed. Refresh and review it before " + action + ".");
+    }
+    return changeSet;
   }
 
   private recordCommitAttempt(activeUserId: string): void {
@@ -455,10 +691,24 @@ export class CalendarStore {
     }
   }
 
+  private invalidateChangeSetConfirmationsFor(changeSetId: string): void {
+    for (const [id, confirmation] of this.changeSetConfirmations) {
+      if (confirmation.changeSetId === changeSetId) this.changeSetConfirmations.delete(id);
+    }
+  }
+
   private trimCommitReceipts(): void {
     while (this.commitReceipts.size > 50) {
       const oldestKey = this.commitReceipts.keys().next().value;
       if (oldestKey) this.commitReceipts.delete(oldestKey);
+      else return;
+    }
+  }
+
+  private trimChangeSetCommitReceipts(): void {
+    while (this.changeSetCommitReceipts.size > 50) {
+      const oldestKey = this.changeSetCommitReceipts.keys().next().value;
+      if (oldestKey) this.changeSetCommitReceipts.delete(oldestKey);
       else return;
     }
   }
@@ -477,6 +727,12 @@ export class CalendarStore {
     return calendar;
   }
 
+  private calendarForOwner(ownerId: string) {
+    const calendar = this.calendars.find((candidate) => candidate.ownerId === ownerId);
+    if (!calendar) throw new CalendarStoreError(404, "Calendar not found for this team member.");
+    return calendar;
+  }
+
   private assertCalendarOwner(calendarId: string, activeUserId: string): void {
     if (this.getCalendar(calendarId).ownerId !== activeUserId) {
       throw new CalendarStoreError(403, "You can only change events on your own calendar.");
@@ -490,9 +746,35 @@ export class CalendarStore {
     }
   }
 
+  private getOwnedActiveEvent(activeUserId: string, eventId: string, expectedRevision: number): CalendarEvent {
+    const event = this.events.get(eventId);
+    if (!event || !["confirmed", "tentative"].includes(event.status)) throw new CalendarStoreError(404, "An affected event is no longer active.");
+    this.assertCalendarOwner(event.calendarId, activeUserId);
+    if (event.revision !== expectedRevision) throw new CalendarStoreError(409, "An affected event changed. Review the time-away changes again.");
+    return event;
+  }
+
+  private assertAuthorizedDelegate(activeUserId: string, delegateUserId: string): void {
+    const allowedDelegates: Readonly<Record<string, readonly string[]>> = { alex: ["maya"] };
+    if (!this.people.some((person) => person.id === delegateUserId) || !(allowedDelegates[activeUserId] ?? []).includes(delegateUserId)) {
+      throw new CalendarStoreError(403, "This teammate is not an approved delegate for your calendar.");
+    }
+  }
+
   private assertRecurrenceMatchesStart(event: CalendarEvent): void {
     if (event.recurrence && weekdayForEvent(event) !== event.recurrence.weekday) {
       throw new CalendarStoreError(400, "A weekly draft must start on its configured recurrence weekday.");
+    }
+    if (!event.recurrence) return;
+    const base = localEventParts(event.startsAt, event.timeZone);
+    const exceptionStarts = new Set<string>();
+    for (const exception of event.recurrence.exceptions) {
+      const original = localEventParts(exception.originalStartsAt, event.timeZone);
+      const dayOffset = (Date.UTC(Number(original.year), Number(original.month) - 1, Number(original.day)) - Date.UTC(Number(base.year), Number(base.month) - 1, Number(base.day))) / (24 * 60 * 60_000);
+      if (original.hour !== base.hour || original.minute !== base.minute || dayOffset < 0 || dayOffset % 7 !== 0 || dayOffset / 7 >= event.recurrence.occurrenceCount || exceptionStarts.has(exception.originalStartsAt)) {
+        throw new CalendarStoreError(400, "A recurrence exception must replace one distinct occurrence in this weekly series.");
+      }
+      exceptionStarts.add(exception.originalStartsAt);
     }
   }
 }

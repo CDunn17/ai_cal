@@ -29,6 +29,11 @@ describe("scheduling foundations", () => {
         eventId: "sam-retrospective-fri",
         startsAt: "2026-09-11T18:00:00.000Z",
         endsAt: "2026-09-11T19:00:00.000Z"
+      },
+      {
+        eventId: "alex-launch-readout-oct",
+        startsAt: "2026-10-15T18:00:00.000Z",
+        endsAt: "2026-10-15T19:00:00.000Z"
       }
     ]);
   });
@@ -88,6 +93,7 @@ describe("scheduling foundations", () => {
       durationMinutes: 30,
       rangeStartsAt: "2026-09-08T13:00:00.000Z",
       rangeEndsAt: "2026-10-07T00:00:00.000Z",
+      maxExceptions: 0,
       recurrence: { frequency: "weekly", weekday: "tuesday", occurrenceCount: 4 }
     });
 
@@ -101,5 +107,26 @@ describe("scheduling foundations", () => {
       "2026-09-29T13:00:00.000Z"
     ]);
     expect(proposals[0].reasons[0]).toContain("All 4 weekly tuesday occurrences fit");
+  });
+
+  it("uses one bounded exception instead of moving an existing meeting", () => {
+    const proposals = proposeRecurringSchedule(demoData.events, demoData.people, demoData.schedulingProfiles ?? [], "alex", {
+      attendeeIds: ["sam"],
+      durationMinutes: 30,
+      rangeStartsAt: "2026-09-08T13:00:00.000Z",
+      rangeEndsAt: "2027-03-03T00:00:00.000Z",
+      maxExceptions: 1,
+      recurrence: { frequency: "weekly", weekday: "tuesday", occurrenceCount: 26 }
+    });
+
+    expect(proposals[0]).toMatchObject({
+      recurrence: {
+        frequency: "weekly",
+        weekday: "tuesday",
+        occurrenceCount: 26,
+        exceptions: [{ originalStartsAt: "2026-10-20T13:00:00.000Z", startsAt: "2026-10-20T14:15:00.000Z" }]
+      }
+    });
+    expect(proposals[0].reasons).toContain("1 one-off exception keeps an existing meeting unchanged.");
   });
 });

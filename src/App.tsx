@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type CSSProperties, type FormEvent } from "react";
-import type { CalendarEvent, DraftCommitConfirmation, EventDraft, ScheduleCandidate, SchedulingProfile } from "./domain/contracts";
+import type { CalendarEvent, ChangeSetCommitConfirmation, DraftCommitConfirmation, EventDraft, ScheduleCandidate, SchedulingProfile, TimeAwayChangeSet } from "./domain/contracts";
 import type { CalendarState } from "./domain/calendar-store";
 import { formatTravelMinutes, officeById, OFFICES, type OfficeId } from "./domain/offices";
 import { ACTIVITY_EVENT, registerCalendarTools, STATE_CHANGED_EVENT, type ToolActivity } from "./webmcp/calendar-tools";
@@ -135,7 +135,13 @@ function eventOwnerLabel(ownerName: string): string {
 
 function recurrenceLabel(event: CalendarEvent): string | null {
   if (!event.recurrence) return null;
-  return "Weekly on " + weekdayLabel(event.recurrence.weekday) + " · " + event.recurrence.occurrenceCount + " occurrences";
+  const exceptionCount = event.recurrence.exceptions.length;
+  return "Weekly on " + weekdayLabel(event.recurrence.weekday) + " · " + event.recurrence.occurrenceCount + " occurrences" + (exceptionCount ? " · " + exceptionCount + " exception" + (exceptionCount === 1 ? "" : "s") : "");
+}
+
+function recurrenceExceptionLabel(exception: NonNullable<CalendarEvent["recurrence"]>["exceptions"][number]): string {
+  const date = new Intl.DateTimeFormat("en-US", { timeZone: DISPLAY_TIME_ZONE, month: "short", day: "numeric" }).format(new Date(exception.originalStartsAt));
+  return date + " · " + timeLabel(exception.originalStartsAt) + " → " + timeLabel(exception.startsAt);
 }
 
 function eventLayout(event: CalendarEvent) {
@@ -197,9 +203,12 @@ export function App() {
   const [proposalError, setProposalError] = useState<string | null>(null);
   const [isFindingAvailability, setIsFindingAvailability] = useState(false);
   const [selectedDraftId, setSelectedDraftId] = useState<string | null>(null);
+  const [selectedChangeSetId, setSelectedChangeSetId] = useState<string | null>(null);
   const [commitConfirmation, setCommitConfirmation] = useState<DraftCommitConfirmation | null>(null);
+  const [changeSetConfirmation, setChangeSetConfirmation] = useState<ChangeSetCommitConfirmation | null>(null);
   const [commitError, setCommitError] = useState<string | null>(null);
   const [isCommitting, setIsCommitting] = useState(false);
+  const [isApplyingChangeSet, setIsApplyingChangeSet] = useState(false);
   const [toolActivities, setToolActivities] = useState<ToolActivity[]>([]);
 
   const refresh = async () => {
@@ -258,6 +267,7 @@ export function App() {
   const selectedEventCalendar = selectedEvent ? state?.calendars.find((calendar) => calendar.id === selectedEvent.calendarId) ?? null : null;
   const activeCalendar = state?.calendars.find((calendar) => calendar.ownerId === state.activeUserId);
   const selectedDraft = state?.drafts.find((draft) => draft.id === selectedDraftId) ?? null;
+  const selectedChangeSet = state?.changeSets.find((changeSet) => changeSet.id === selectedChangeSetId) ?? null;
   const calendarColors = new Map(state?.calendars.map((calendar) => [calendar.id, calendar.color]));
   const teamMemberColors = new Map(state?.calendars.map((calendar) => [calendar.ownerId, calendar.color]));
   const profilesByPersonId = useMemo(() => new Map(state?.schedulingProfiles.map((profile) => [profile.personId, profile])), [state]);
@@ -380,6 +390,53 @@ export function App() {
     }
   };
 
+  const discardChangeSet = async (changeSet: TimeAwayChangeSet) => {
+    try {
+      await request("/api/time-away-change-sets/" + changeSet.id, {
+        method: "DELETE",
+        body: JSON.stringify({ expectedRevision: changeSet.revision })
+      });
+      setSelectedChangeSetId(null);
+      setChangeSetConfirmation(null);
+      await refresh();
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : "The time-away change set could not be discarded.");
+    }
+  };
+
+  const prepareChangeSetCommit = async (changeSet: TimeAwayChangeSet) => {
+    setCommitError(null);
+    try {
+      const response = await request<{ confirmation: ChangeSetCommitConfirmation }>("/api/time-away-change-sets/" + changeSet.id + "/commit-confirmation", {
+        method: "POST",
+        body: JSON.stringify({ expectedRevision: changeSet.revision })
+      });
+      setChangeSetConfirmation(response.confirmation);
+    } catch (error) {
+      setCommitError(error instanceof Error ? error.message : "The time-away change set could not be prepared for review.");
+    }
+  };
+
+  const commitChangeSet = async () => {
+    if (!selectedChangeSet || !changeSetConfirmation) return;
+    setIsApplyingChangeSet(true);
+    setCommitError(null);
+    try {
+      await request("/api/time-away-change-sets/" + selectedChangeSet.id + "/commit", {
+        method: "POST",
+        headers: { "Idempotency-Key": crypto.randomUUID() },
+        body: JSON.stringify({ expectedRevision: selectedChangeSet.revision, confirmationId: changeSetConfirmation.id })
+      });
+      setChangeSetConfirmation(null);
+      setSelectedChangeSetId(null);
+      await refresh();
+    } catch (error) {
+      setCommitError(error instanceof Error ? error.message : "The time-away changes could not be applied.");
+    } finally {
+      setIsApplyingChangeSet(false);
+    }
+  };
+
   const saveForm = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!form || !activeCalendar) return;
@@ -485,6 +542,12 @@ export function App() {
               <div className="draft-list">{state.drafts.map((draft) => <button type="button" className="draft-card" key={draft.id} onClick={() => setSelectedDraftId(draft.id)}><strong>{draft.event.title}</strong><span>{timeLabel(draft.event.startsAt)}{recurrenceLabel(draft.event) ? " · repeats weekly" : ""} · review required</span></button>)}</div>
             )}
           </section>
+          <section className="draft-section">
+            <p className="eyebrow">Time-away plans</p>
+            {state.changeSets.length === 0 ? <p className="muted">Agent-proposed cancellations and transfers stay here for your review.</p> : (
+              <div className="draft-list">{state.changeSets.map((changeSet) => <button type="button" className="draft-card" key={changeSet.id} onClick={() => setSelectedChangeSetId(changeSet.id)}><strong>{changeSet.timeAwayEvent.title}</strong><span>{changeSet.cancellations.length} cancel · {changeSet.transfers.length} transfer · review required</span></button>)}</div>
+            )}
+          </section>
           <section className="tool-activity-section">
             <p className="eyebrow">Live WebMCP trace</p>
             {toolActivities.length === 0 ? <p className="muted">Agent tool calls will appear here with their structured request and result.</p> : (
@@ -549,6 +612,7 @@ export function App() {
           <h2>{selectedDraft.event.title}</h2>
           <p>{timeLabel(selectedDraft.event.startsAt)}–{timeLabel(selectedDraft.event.endsAt)} · {DISPLAY_TIME_ZONE.replace("_", " ")}</p>
           {recurrenceLabel(selectedDraft.event) && <p className="recurrence-note">{recurrenceLabel(selectedDraft.event)}. The entire series remains a draft until you review and confirm it.</p>}
+          {selectedDraft.event.recurrence?.exceptions.map((exception) => <p className="exception-note" key={exception.originalStartsAt}>One-off adjustment: {recurrenceExceptionLabel(exception)}. Your existing meeting stays in place.</p>)}
           <div className="event-diff">
             <div><span>Before</span><strong>No event or invitations</strong><p>The calendar remains unchanged.</p></div>
             <div><span>After approval</span><strong>{selectedDraft.event.title}</strong><p>{selectedDraft.event.attendeeIds.map((id) => state.people.find((person) => person.id === id)?.displayName).filter(Boolean).join(", ")}</p></div>
@@ -556,6 +620,22 @@ export function App() {
           <p className="draft-expiry">Draft expires {new Intl.DateTimeFormat("en-US", { timeZone: DISPLAY_TIME_ZONE, month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }).format(new Date(selectedDraft.expiresAt))}.</p>
           <div className="detail-actions"><button type="button" onClick={() => void discardDraft(selectedDraft)}>Discard draft</button><button type="button" className="primary-button" onClick={() => void prepareDraftCommit(selectedDraft)}>Review &amp; confirm</button></div>
           <p className="commit-note">Only a visible, current review can add this event. The WebMCP commit tool remains blocked.</p>
+        </aside>
+      )}
+
+      {selectedChangeSet && (
+        <aside className="event-details draft-details" aria-label="Time-away change-set review">
+          <button className="close-button" type="button" aria-label="Close time-away review" onClick={() => setSelectedChangeSetId(null)}>×</button>
+          <p className="eyebrow">Reviewable time-away plan</p>
+          <h2>{selectedChangeSet.timeAwayEvent.title}</h2>
+          <p>{new Intl.DateTimeFormat("en-US", { timeZone: DISPLAY_TIME_ZONE, month: "short", day: "numeric" }).format(new Date(selectedChangeSet.timeAwayEvent.startsAt))}–{new Intl.DateTimeFormat("en-US", { timeZone: DISPLAY_TIME_ZONE, month: "short", day: "numeric" }).format(new Date(Date.parse(selectedChangeSet.timeAwayEvent.endsAt) - 1))}</p>
+          <div className="event-diff">
+            <div><span>Before</span><strong>Your calendar stays unchanged</strong><p>Nothing is cancelled, transferred, or marked as time away yet.</p></div>
+            <div><span>After approval</span><strong>{selectedChangeSet.cancellations.length} cancellation{selectedChangeSet.cancellations.length === 1 ? "" : "s"} · {selectedChangeSet.transfers.length} transfer{selectedChangeSet.transfers.length === 1 ? "" : "s"}</strong><p>{selectedChangeSet.cancellations.map((operation) => state.events.find((event) => event.id === operation.eventId)?.title ?? "Changed event").join(", ") || "No cancellations"}</p><p>{selectedChangeSet.transfers.map((operation) => (state.events.find((event) => event.id === operation.eventId)?.title ?? "Changed event") + " → " + (state.people.find((person) => person.id === operation.newOwnerId)?.displayName ?? "delegate")).join(", ") || "No transfers"}</p></div>
+          </div>
+          <p className="draft-expiry">Plan expires {new Intl.DateTimeFormat("en-US", { timeZone: DISPLAY_TIME_ZONE, month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }).format(new Date(selectedChangeSet.expiresAt))}.</p>
+          <div className="detail-actions"><button type="button" onClick={() => void discardChangeSet(selectedChangeSet)}>Discard plan</button><button type="button" className="primary-button" onClick={() => void prepareChangeSetCommit(selectedChangeSet)}>Review &amp; confirm</button></div>
+          <p className="commit-note">Site Tools can only create this plan. Applying cancellations or a transfer requires this visible human confirmation and sends no notifications.</p>
         </aside>
       )}
 
@@ -654,6 +734,23 @@ export function App() {
             </dl>
             {commitError && <p className="form-error" role="alert">{commitError}</p>}
             <div className="form-actions"><button type="button" disabled={isCommitting} onClick={() => setCommitConfirmation(null)}>Keep reviewing</button><button type="button" className="primary-button" disabled={isCommitting} onClick={() => void commitDraft()}>{isCommitting ? "Adding…" : "Confirm & add event"}</button></div>
+          </section>
+        </div>
+      )}
+
+      {changeSetConfirmation && selectedChangeSet && (
+        <div className="modal-backdrop" role="presentation">
+          <section className="confirmation-dialog" role="dialog" aria-modal="true" aria-labelledby="time-away-confirmation-title">
+            <button type="button" className="close-button" aria-label="Close time-away confirmation" disabled={isApplyingChangeSet} onClick={() => setChangeSetConfirmation(null)}>×</button>
+            <p className="eyebrow">Human approval required</p>
+            <h2 id="time-away-confirmation-title">Apply this time-away plan?</h2>
+            <p>This adds a private time-away block, cancels {selectedChangeSet.cancellations.length} owned meeting{selectedChangeSet.cancellations.length === 1 ? "" : "s"}, and transfers {selectedChangeSet.transfers.length}. MyCP does not send cancellation or transfer notifications in this demo.</p>
+            <dl>
+              <div><dt>Time away</dt><dd>{selectedChangeSet.timeAwayEvent.title}</dd></div>
+              <div><dt>Review</dt><dd>Plan revision {selectedChangeSet.revision}; confirmation expires in five minutes.</dd></div>
+            </dl>
+            {commitError && <p className="form-error" role="alert">{commitError}</p>}
+            <div className="form-actions"><button type="button" disabled={isApplyingChangeSet} onClick={() => setChangeSetConfirmation(null)}>Keep reviewing</button><button type="button" className="primary-button" disabled={isApplyingChangeSet} onClick={() => void commitChangeSet()}>{isApplyingChangeSet ? "Applying…" : "Confirm & apply changes"}</button></div>
           </section>
         </div>
       )}

@@ -137,7 +137,7 @@ describe("CalendarStore", () => {
       recurrence: { frequency: "weekly", weekday: "tuesday", occurrenceCount: 4 }
     });
 
-    expect(draft.event.recurrence).toEqual({ frequency: "weekly", weekday: "tuesday", occurrenceCount: 4 });
+    expect(draft.event.recurrence).toEqual({ frequency: "weekly", weekday: "tuesday", occurrenceCount: 4, exceptions: [] });
     expect(() => store.createDraft("alex", {
       calendarId: "alex-main",
       title: "Wrong weekday",
@@ -148,6 +148,31 @@ describe("CalendarStore", () => {
       attendeeIds: ["sam"],
       recurrence: { frequency: "weekly", weekday: "wednesday", occurrenceCount: 4 }
     })).toThrow(new CalendarStoreError(400, "A weekly draft must start on its configured recurrence weekday."));
+  });
+
+  it("keeps a time-away change set reviewable until a human confirmation applies its cancellations and transfer", () => {
+    const store = new CalendarStore(demoData);
+    const changeSet = store.createTimeAwayChangeSet("alex", {
+      startsAt: "2026-10-12T04:00:00.000Z",
+      endsAt: "2026-10-17T04:00:00.000Z",
+      transferEventIds: ["alex-team-standup-oct"],
+      transferToUserId: "maya"
+    });
+
+    expect(changeSet.cancellations.map((operation) => operation.eventId)).toEqual(["alex-project-kickoff-oct", "alex-launch-readout-oct"]);
+    expect(changeSet.transfers).toEqual([{ eventId: "alex-team-standup-oct", expectedRevision: 1, newOwnerId: "maya" }]);
+    expect(store.stateFor("alex").changeSets).toEqual([changeSet]);
+
+    const confirmation = store.prepareTimeAwayChangeSetCommit("alex", changeSet.id, changeSet.revision);
+    const key = "time-away-change-set-key-001";
+    const applied = store.commitTimeAwayChangeSet("alex", changeSet.id, { expectedRevision: changeSet.revision, confirmationId: confirmation.id }, key);
+    const retry = store.commitTimeAwayChangeSet("alex", changeSet.id, { expectedRevision: changeSet.revision, confirmationId: confirmation.id }, key);
+
+    expect(applied.find((event) => event.title === "Vacation")?.status).toBe("confirmed");
+    expect(retry).toEqual(applied);
+    expect(applied.find((event) => event.title === "Team standup")).toMatchObject({ calendarId: "maya-main", attendeeIds: ["sam", "maya"] });
+    expect(store.stateFor("alex").events.find((event) => event.id === "alex-team-standup-oct")).toBeUndefined();
+    expect(store.stateFor("alex").changeSets).toEqual([]);
   });
 
   it("round-trips drafts and audit history through a persistence snapshot", () => {

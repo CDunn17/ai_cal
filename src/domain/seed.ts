@@ -139,6 +139,54 @@ const rawDemoData = {
       visibility: "public",
       status: "confirmed",
       attendeeIds: ["sam", "maya", "alex"]
+    },
+    {
+      id: "alex-board-brief-oct",
+      calendarId: "alex-main",
+      revision: 1,
+      title: "Board briefing",
+      startsAt: "2026-10-20T13:00:00.000Z",
+      endsAt: "2026-10-20T14:00:00.000Z",
+      timeZone: "America/New_York",
+      visibility: "public",
+      status: "confirmed",
+      attendeeIds: ["alex"]
+    },
+    {
+      id: "alex-project-kickoff-oct",
+      calendarId: "alex-main",
+      revision: 1,
+      title: "Project kickoff",
+      startsAt: "2026-10-12T15:00:00.000Z",
+      endsAt: "2026-10-12T16:00:00.000Z",
+      timeZone: "America/New_York",
+      visibility: "public",
+      status: "confirmed",
+      attendeeIds: ["alex", "sam"]
+    },
+    {
+      id: "alex-team-standup-oct",
+      calendarId: "alex-main",
+      revision: 1,
+      title: "Team standup",
+      startsAt: "2026-10-13T14:00:00.000Z",
+      endsAt: "2026-10-13T14:30:00.000Z",
+      timeZone: "America/New_York",
+      visibility: "public",
+      status: "confirmed",
+      attendeeIds: ["alex", "sam"]
+    },
+    {
+      id: "alex-launch-readout-oct",
+      calendarId: "alex-main",
+      revision: 1,
+      title: "Launch readout",
+      startsAt: "2026-10-15T18:00:00.000Z",
+      endsAt: "2026-10-15T19:00:00.000Z",
+      timeZone: "America/New_York",
+      visibility: "public",
+      status: "confirmed",
+      attendeeIds: ["alex", "maya"]
     }
   ]
 } as const;
