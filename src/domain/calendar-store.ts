@@ -146,6 +146,16 @@ export class CalendarStore {
     for (const event of demoData.events) {
       if (!store.events.has(event.id)) store.events.set(event.id, event);
     }
+    const previousOctoberStandup = store.events.get("alex-team-standup-oct");
+    const currentOctoberStandup = demoData.events.find((event) => event.id === "alex-team-standup-oct");
+    if (
+      previousOctoberStandup?.revision === 1 &&
+      previousOctoberStandup.startsAt === "2026-10-13T14:00:00.000Z" &&
+      previousOctoberStandup.endsAt === "2026-10-13T14:30:00.000Z" &&
+      currentOctoberStandup
+    ) {
+      store.events.set(currentOctoberStandup.id, currentOctoberStandup);
+    }
     for (const draft of snapshot.drafts) {
       store.drafts.set(draft.id, eventDraftSchema.parse(draft));
     }

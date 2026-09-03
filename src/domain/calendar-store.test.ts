@@ -208,6 +208,25 @@ describe("CalendarStore", () => {
     expect(restoredEvents[0]).toMatchObject({ title: "Sprint retrospective", calendarId: "sam-main" });
   });
 
+  it("keeps the expanded demo's team standups on Wednesdays and migrates the untouched October fixture", () => {
+    const standups = demoData.events.filter((event) => event.title === "Team standup");
+    expect(standups).toHaveLength(8);
+    expect(standups.every((event) => new Date(event.startsAt).getUTCDay() === 3 && event.startsAt.endsWith("T14:00:00.000Z"))).toBe(true);
+
+    const current = new CalendarStore(demoData).snapshot();
+    const legacySnapshot = {
+      ...current,
+      data: {
+        ...current.data,
+        events: current.data.events.map((event) => event.id === "alex-team-standup-oct"
+          ? { ...event, startsAt: "2026-10-13T14:00:00.000Z", endsAt: "2026-10-13T14:30:00.000Z" }
+          : event)
+      }
+    } as unknown as Parameters<typeof CalendarStore.fromSnapshot>[0];
+
+    expect(CalendarStore.fromSnapshot(legacySnapshot).stateFor("alex").events.find((event) => event.id === "alex-team-standup-oct")?.startsAt).toBe("2026-10-14T14:00:00.000Z");
+  });
+
   it("commits a draft only after a current human confirmation and makes retries idempotent", () => {
     const store = new CalendarStore(demoData);
     const draft = store.createDraft("alex", {
