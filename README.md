@@ -25,7 +25,7 @@ The demo should make four things unmistakable:
 
 ### Human experience
 
-- Month navigation that displays each month’s first workweek, with a clear display timezone.
+- Week navigation with an exact displayed date range and a clear display timezone.
 - Plan a new meeting through an ordinary dialog: title, duration, attendees, meeting office, and target-date flexibility or a deadline.
 - Clickable team profiles with bounded meeting preferences, recurring focus blocks, office/remote work patterns, and two deterministic office locations with fixed inter-office travel feedback.
 - Event details with attendees, agenda, location, visibility, and scheduling notes.

@@ -6,7 +6,7 @@ import { ACTIVITY_EVENT, registerCalendarTools, STATE_CHANGED_EVENT, type ToolAc
 
 const DISPLAY_TIME_ZONE = "America/New_York";
 const HOURS = Array.from({ length: 10 }, (_, index) => index + 8);
-const INITIAL_VISIBLE_MONTH = "2026-09";
+const INITIAL_VISIBLE_WEEK = "2026-09-07";
 const DEMO_REFERENCE_DAY = "2026-09-10";
 
 type EventForm = {
@@ -101,21 +101,14 @@ function addDays(date: string, days: number): string {
   return value.toISOString().slice(0, 10);
 }
 
-function shiftMonth(month: string, amount: number): string {
-  const [year, monthNumber] = month.split("-").map(Number);
-  const shifted = new Date(Date.UTC(year, monthNumber - 1 + amount, 1));
-  return shifted.getUTCFullYear() + "-" + String(shifted.getUTCMonth() + 1).padStart(2, "0");
+function shiftWeek(weekStart: string, amount: number): string {
+  const shifted = new Date(weekStart + "T12:00:00.000Z");
+  shifted.setUTCDate(shifted.getUTCDate() + amount * 7);
+  return shifted.toISOString().slice(0, 10);
 }
 
-function visibleMonthLabel(month: string): string {
-  return new Intl.DateTimeFormat("en-US", { timeZone: "UTC", month: "long", year: "numeric" }).format(new Date(month + "-01T12:00:00.000Z"));
-}
-
-function firstWorkweekOfMonth(month: string): { key: string; short: string; day: string }[] {
-  const firstDay = new Date(month + "-01T12:00:00.000Z");
-  const daysUntilMonday = (8 - firstDay.getUTCDay()) % 7;
-  firstDay.setUTCDate(firstDay.getUTCDate() + daysUntilMonday);
-
+function workweekDays(weekStart: string): { key: string; short: string; day: string }[] {
+  const firstDay = new Date(weekStart + "T12:00:00.000Z");
   return Array.from({ length: 5 }, (_, index) => {
     const day = new Date(firstDay);
     day.setUTCDate(firstDay.getUTCDate() + index);
@@ -131,6 +124,17 @@ function firstWorkweekOfMonth(month: string): { key: string; short: string; day:
 function workweekLabel(days: { key: string }[]): string {
   const firstDay = new Date(days[0].key + "T12:00:00.000Z");
   return "Week of " + new Intl.DateTimeFormat("en-US", { timeZone: "UTC", month: "short", day: "numeric" }).format(firstDay);
+}
+
+function workweekRangeLabel(days: { key: string }[]): string {
+  const firstDay = new Date(days[0].key + "T12:00:00.000Z");
+  const lastDay = new Date(days[days.length - 1].key + "T12:00:00.000Z");
+  const monthDay = new Intl.DateTimeFormat("en-US", { timeZone: "UTC", month: "long", day: "numeric" });
+  const year = new Intl.DateTimeFormat("en-US", { timeZone: "UTC", year: "numeric" }).format(lastDay);
+  const sameMonth = firstDay.getUTCMonth() === lastDay.getUTCMonth() && firstDay.getUTCFullYear() === lastDay.getUTCFullYear();
+  return sameMonth
+    ? monthDay.format(firstDay) + "–" + lastDay.getUTCDate() + ", " + year
+    : monthDay.format(firstDay) + " – " + monthDay.format(lastDay) + ", " + year;
 }
 
 function dateRangeForPlan(plan: MeetingPlannerForm): { rangeStartsAt: string; rangeEndsAt: string } {
@@ -217,7 +221,7 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
 
 export function App() {
   const [state, setState] = useState<CalendarState | null>(null);
-  const [visibleMonth, setVisibleMonth] = useState(INITIAL_VISIBLE_MONTH);
+  const [visibleWeekStart, setVisibleWeekStart] = useState(INITIAL_VISIBLE_WEEK);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
   const [selectedProfileUserId, setSelectedProfileUserId] = useState<string | null>(null);
@@ -302,7 +306,7 @@ export function App() {
   const selectedProfile = selectedProfileUserId ? profilesByPersonId.get(selectedProfileUserId) ?? null : null;
   const selectedProfilePerson = selectedProfileUserId ? state?.people.find((person) => person.id === selectedProfileUserId) ?? null : null;
   const profileOfficeName = (personId: string) => officeById(profilesByPersonId.get(personId)?.defaultOfficeId ?? "downtown-manhattan").name;
-  const visibleWeekDays = useMemo(() => firstWorkweekOfMonth(visibleMonth), [visibleMonth]);
+  const visibleWeekDays = useMemo(() => workweekDays(visibleWeekStart), [visibleWeekStart]);
 
   const findAvailability = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -537,7 +541,7 @@ export function App() {
     <main className="calendar-app">
       <header className="calendar-header">
         <div className="brand"><span className="brand-mark">M</span><strong>MyCP</strong></div>
-        <div className="week-controls"><button type="button" className="icon-button" aria-label="Previous month" onClick={() => setVisibleMonth((month) => shiftMonth(month, -1))}>‹</button><strong aria-live="polite">{visibleMonthLabel(visibleMonth)}</strong><button type="button" className="icon-button" aria-label="Next month" onClick={() => setVisibleMonth((month) => shiftMonth(month, 1))}>›</button></div>
+        <div className="week-controls"><button type="button" className="icon-button" aria-label="Previous week" onClick={() => setVisibleWeekStart((weekStart) => shiftWeek(weekStart, -1))}>‹</button><strong aria-live="polite">{workweekRangeLabel(visibleWeekDays)}</strong><button type="button" className="icon-button" aria-label="Next week" onClick={() => setVisibleWeekStart((weekStart) => shiftWeek(weekStart, 1))}>›</button></div>
         <div className="header-actions"><span className="timezone-label">{DISPLAY_TIME_ZONE.replace("_", " ")}</span><button type="button" className="primary-button" onClick={() => { setPlannerError(null); setMeetingPlanner(newMeetingPlannerForm()); }}>New event</button></div>
       </header>
 
@@ -598,7 +602,9 @@ export function App() {
           <div className="week-grid">
             <div className="time-column">
               <div className="grid-corner" />
-              {HOURS.map((hour) => <div className="time-label" key={hour}>{hour === 12 ? "12 PM" : hour > 12 ? String(hour - 12) + " PM" : String(hour) + " AM"}</div>)}
+              <div className="time-gutter" aria-hidden="true">
+                {HOURS.map((hour, index) => <div className="time-label" key={hour} style={{ "--time-offset": String(index * 68) + "px" } as CSSProperties & Record<"--time-offset", string>}>{hour === 12 ? "12 PM" : hour > 12 ? String(hour - 12) + " PM" : String(hour) + " AM"}</div>)}
+              </div>
             </div>
             {visibleWeekDays.map((day) => (
               <div className="day-column" key={day.key}>
