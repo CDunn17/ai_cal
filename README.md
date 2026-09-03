@@ -25,7 +25,7 @@ The demo should make four things unmistakable:
 
 ### Human experience
 
-- Week view with a clear display timezone.
+- Month navigation that displays each month’s first workweek, with a clear display timezone.
 - Plan a new meeting through an ordinary dialog: title, duration, attendees, meeting office, and target-date flexibility or a deadline.
 - Clickable team profiles with bounded meeting preferences, recurring focus blocks, office/remote work patterns, and two deterministic office locations with fixed inter-office travel feedback.
 - Event details with attendees, agenda, location, visibility, and scheduling notes.
@@ -129,6 +129,7 @@ Milestones 2 and 3 run a deterministic, fictional demo identity (Alex) through t
 | POST /api/calendar-events-in-range | Returns a bounded list of active events owned by the active user, for a reviewed change plan only. |
 | POST /api/time-away-proposals | Previews the exact owned events a time-away plan would cancel or transfer. This is read-only. |
 | POST /api/time-away-change-sets | Creates an expiring, reviewable change-set draft containing a private absence block, cancellations, and approved-delegate transfers. |
+| DELETE /api/time-away-change-sets/:id | Discards a pending time-away change set only when its current reviewed revision is supplied. |
 | POST /api/time-away-change-sets/:id/commit-confirmation | Creates a five-minute, one-time human confirmation for a reviewed time-away change set. |
 | POST /api/time-away-change-sets/:id/commit | Applies a currently confirmed change set atomically after every affected event revision is rechecked. It never sends notifications. |
 | POST /api/event-drafts | Creates a separate, 24-hour reviewable one-time or weekly-series draft on the active user’s calendar. A series has one weekday, 2–26 occurrences, and at most four reviewed exceptions; it remains out of the committed event collection and cannot send invitations. |
