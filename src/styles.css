@@ -78,7 +78,7 @@ button { cursor: pointer; }
 .day-column { border-left: 1px solid #ece9f1; }
 .day-header { display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 2px; color: #87808e; font-size: .72rem; }
 .day-header strong { display: grid; width: 26px; height: 26px; place-items: center; border-radius: 50%; color: #3d3748; font-size: .9rem; }
-.day-column:nth-child(5) .day-header strong { color: #fff; background: #6046c4; }
+.day-header.is-reference-day strong { color: #fff; background: #6046c4; }
 .day-body { position: relative; height: 680px; }
 .hour-line { height: 68px; border-bottom: 1px solid #f0edf4; }
 .event-block { position: absolute; z-index: 1; left: 6px; right: 6px; overflow: hidden; border: 0; border-left: 3px solid var(--event-color); border-radius: 5px; padding: 6px 7px; color: #3d315f; background: color-mix(in srgb, var(--event-color) 17%, white); text-align: left; }
