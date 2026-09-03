@@ -26,6 +26,7 @@ The demo should make four things unmistakable:
 ### Human experience
 
 - Week navigation with an exact displayed date range and a clear display timezone.
+- Multi-day events render across every intersecting workday, with partial first and last days clipped to their actual time range.
 - Plan a new meeting through an ordinary dialog: title, duration, attendees, meeting office, and target-date flexibility or a deadline.
 - Clickable team profiles with bounded meeting preferences, recurring focus blocks, office/remote work patterns, and two deterministic office locations with fixed inter-office travel feedback.
 - Event details with attendees, agenda, location, visibility, and scheduling notes.

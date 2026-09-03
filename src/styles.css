@@ -89,7 +89,10 @@ button { cursor: pointer; }
 .event-block strong, .event-block span { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .event-block strong { font-size: .72rem; }
 .event-block span { margin-top: 2px; color: #625a72; font-size: .66rem; }
+.event-block.multi-day-event { z-index: 0; border-left-width: 4px; background: color-mix(in srgb, var(--event-color) 10%, white); }
+.event-block.multi-day-event:hover { filter: brightness(.98); }
 .event-block.private-event { border-left-color: color-mix(in srgb, var(--event-color) 62%, #8f8998); color: color-mix(in srgb, var(--event-color) 58%, #393441); background: color-mix(in srgb, var(--event-color) 11%, #e9e6ec); }
+.event-block.private-event.multi-day-event { background: color-mix(in srgb, var(--event-color) 8%, #e9e6ec); }
 .event-block.private-event span { color: color-mix(in srgb, var(--event-color) 48%, #57505f); }
 
 .event-details { position: fixed; z-index: 3; top: 88px; right: 26px; width: min(366px, calc(100% - 32px)); padding: 26px; border: 1px solid #e4dfeb; border-radius: 16px; background: #fff; box-shadow: 0 20px 58px rgba(36, 27, 65, .18); }

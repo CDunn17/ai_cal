@@ -175,14 +175,37 @@ function recurrenceExceptionLabel(exception: NonNullable<CalendarEvent["recurren
   return date + " · " + timeLabel(exception.originalStartsAt) + " → " + timeLabel(exception.startsAt);
 }
 
-function eventLayout(event: CalendarEvent) {
-  const parts = localParts(event.startsAt);
-  const endParts = localParts(event.endsAt);
-  const startMinutes = Number(parts.hour) * 60 + Number(parts.minute);
-  const endMinutes = Number(endParts.hour) * 60 + Number(endParts.minute);
+function dayStartInstant(day: string): number {
+  return Date.parse(zonedInputToIso(day + "T00:00"));
+}
+
+function eventIntersectsDay(event: CalendarEvent, day: string): boolean {
+  const startsAt = Date.parse(event.startsAt);
+  const endsAt = Date.parse(event.endsAt);
+  const dayStartsAt = dayStartInstant(day);
+  const dayEndsAt = dayStartInstant(addDays(day, 1));
+  return startsAt < dayEndsAt && endsAt > dayStartsAt;
+}
+
+function isMultiDayEvent(event: CalendarEvent): boolean {
+  return dayKey(event.startsAt) !== dayKey(new Date(Date.parse(event.endsAt) - 1).toISOString());
+}
+
+function eventLayoutForDay(event: CalendarEvent, day: string) {
+  const dayStartsAt = dayStartInstant(day);
+  const dayEndsAt = dayStartInstant(addDays(day, 1));
+  const startsAt = Date.parse(event.startsAt);
+  const endsAt = Date.parse(event.endsAt);
+  const startParts = localParts(new Date(Math.max(startsAt, dayStartsAt)).toISOString());
+  const endParts = localParts(new Date(Math.min(endsAt, dayEndsAt)).toISOString());
+  const startMinutes = startsAt <= dayStartsAt ? 8 * 60 : Number(startParts.hour) * 60 + Number(startParts.minute);
+  const endMinutes = endsAt >= dayEndsAt ? 18 * 60 : Number(endParts.hour) * 60 + Number(endParts.minute);
+  const visibleStart = Math.max(8 * 60, startMinutes);
+  const visibleEnd = Math.min(18 * 60, endMinutes);
+  if (visibleEnd <= visibleStart) return null;
   return {
-    top: Math.max(0, ((startMinutes - 8 * 60) / 60) * 68),
-    height: Math.max(32, ((endMinutes - startMinutes) / 60) * 68)
+    top: ((visibleStart - 8 * 60) / 60) * 68,
+    height: Math.max(32, ((visibleEnd - visibleStart) / 60) * 68)
   };
 }
 
@@ -611,10 +634,12 @@ export function App() {
                 <div className={"day-header" + (day.key === DEMO_REFERENCE_DAY ? " is-reference-day" : "")}><span>{day.short}</span><strong>{day.day}</strong></div>
                 <div className="day-body">
                   {HOURS.map((hour) => <div className="hour-line" key={hour} />)}
-                  {state.events.filter((event) => dayKey(event.startsAt) === day.key).map((event) => {
-                    const layout = eventLayout(event);
+                  {state.events.filter((event) => eventIntersectsDay(event, day.key)).map((event) => {
+                    const layout = eventLayoutForDay(event, day.key);
+                    if (!layout) return null;
                     const isBusyOnly = event.visibility === "private" && event.title === "Busy";
                     const isPrivateEvent = event.visibility === "private";
+                    const spansMultipleDays = isMultiDayEvent(event);
                     const style = {
                       top: layout.top,
                       height: layout.height,
@@ -623,13 +648,13 @@ export function App() {
                     return (
                       <button
                         type="button"
-                        className={"event-block" + (isPrivateEvent ? " private-event" : "") + (isBusyOnly ? " busy-only" : "")}
+                        className={"event-block" + (isPrivateEvent ? " private-event" : "") + (isBusyOnly ? " busy-only" : "") + (spansMultipleDays ? " multi-day-event" : "")}
                         style={style}
                         key={event.id}
                         onClick={() => setSelectedEventId(event.id)}
                       >
                         <strong>{event.title}</strong>
-                        <span>{timeLabel(event.startsAt)}</span>
+                        <span>{spansMultipleDays ? "Multi-day" : timeLabel(event.startsAt)}</span>
                       </button>
                     );
                   })}
