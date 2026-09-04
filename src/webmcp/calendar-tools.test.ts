@@ -10,6 +10,7 @@ describe("calendar WebMCP tools", () => {
       "find_availability",
       "propose_schedule",
       "propose_recurring_schedule",
+      "create_recurring_event_draft_from_proposal",
       "propose_time_away_changes",
       "create_time_away_change_set_draft",
       "get_event_details",
@@ -48,7 +49,7 @@ describe("calendar WebMCP tools", () => {
     const dispose = await registerCalendarTools();
     dispose();
 
-    expect(registered).toHaveLength(14);
+    expect(registered).toHaveLength(15);
     delete (globalThis as { document?: unknown }).document;
   });
 
@@ -59,11 +60,15 @@ describe("calendar WebMCP tools", () => {
     expect(recurringTool?.inputSchema).toMatchObject({
       required: ["attendeeIds", "durationMinutes", "rangeStartsAt", "rangeEndsAt", "recurrence"],
       properties: {
+        requestedStartTime: { description: expect.stringContaining("Requested local start time") },
         recurrence: {
           properties: { frequency: { enum: ["weekly"] }, occurrenceCount: { minimum: 2, maximum: 26 } }
         }
       }
     });
+
+    const recurringDraftTool = calendarTools.find((tool) => tool.name === "create_recurring_event_draft_from_proposal");
+    expect(recurringDraftTool?.inputSchema).toMatchObject({ required: ["proposalId", "title"] });
   });
 
   it("bounds tool output by UTF-8 byte size even when content is untrusted and large", () => {

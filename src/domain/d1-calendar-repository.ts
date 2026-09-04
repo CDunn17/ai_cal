@@ -58,6 +58,10 @@ export class D1CalendarRepository {
     return this.withStore((store) => store.createDraft(activeUserId, input));
   }
 
+  async createRecurringDraftFromProposal(activeUserId: string, input: unknown) {
+    return this.withStore((store) => store.createRecurringDraftFromProposal(activeUserId, input));
+  }
+
   async updateDraft(activeUserId: string, draftId: string, input: unknown) {
     return this.withStore((store) => store.updateDraft(activeUserId, draftId, input));
   }

@@ -129,4 +129,26 @@ describe("scheduling foundations", () => {
     });
     expect(proposals[0].reasons).toContain("1 one-off exception keeps an existing meeting unchanged.");
   });
+
+  it("honors an exact requested recurring start time and uses a one-off exception for a conflict", () => {
+    const proposals = proposeRecurringSchedule(demoData.events, demoData.people, demoData.schedulingProfiles ?? [], "alex", {
+      attendeeIds: ["sam"],
+      durationMinutes: 30,
+      rangeStartsAt: "2026-09-08T13:00:00.000Z",
+      rangeEndsAt: "2026-10-07T00:00:00.000Z",
+      requestedStartTime: "15:00",
+      recurrence: { frequency: "weekly", weekday: "tuesday", occurrenceCount: 4 },
+      maxExceptions: 2
+    });
+
+    expect(proposals[0]).toMatchObject({
+      startsAt: "2026-09-08T19:00:00.000Z",
+      recurrence: {
+        exceptions: [
+          { originalStartsAt: "2026-09-15T19:00:00.000Z" },
+          { originalStartsAt: "2026-09-29T19:00:00.000Z" }
+        ]
+      }
+    });
+  });
 });

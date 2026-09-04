@@ -341,6 +341,7 @@ export function proposeRecurringSchedule(
   const calendarEvents = expandedEvents(events, rangeStart, rangeEnd);
   const candidates: RecurringScheduleCandidate[] = [];
   let firstRecurringDay: string | undefined;
+  const requestedStartMinutes = request.requestedStartTime ? minutesFromClock(request.requestedStartTime) : undefined;
 
   for (let startsAt = roundedUpToQuarterHour(rangeStart); startsAt + durationMilliseconds + (request.recurrence.occurrenceCount - 1) * 7 * 24 * 60 * 60_000 <= rangeEnd; startsAt += 15 * 60_000) {
     const firstInterval = {
@@ -354,6 +355,9 @@ export function proposeRecurringSchedule(
     const candidateDay = localDay(firstInterval.startsAt, activeUser.timeZone);
     if (!firstRecurringDay) firstRecurringDay = candidateDay;
     if (candidateDay !== firstRecurringDay) break;
+    if (requestedStartMinutes !== undefined && Math.abs(localMinutes(firstInterval.startsAt, activeUser.timeZone) - requestedStartMinutes) > (request.timeFlexibilityMinutes ?? 0)) {
+      continue;
+    }
     const validOccurrences: ScheduleCandidate[] = [];
     const exceptions: Array<{ originalStartsAt: string; startsAt: string; endsAt: string }> = [];
     let hasUnresolvedConflict = false;
@@ -401,4 +405,29 @@ export function proposeRecurringSchedule(
   return candidates
     .sort((left, right) => right.score - left.score || Date.parse(left.startsAt) - Date.parse(right.startsAt))
     .slice(0, maxResults);
+}
+
+/** Rechecks every selected occurrence without changing any existing event. */
+export function recurringEventFitsAvailability(
+  events: readonly CalendarEvent[],
+  people: readonly Person[],
+  profiles: readonly SchedulingProfile[],
+  activeUserId: string,
+  event: CalendarEvent
+): boolean {
+  if (!event.recurrence) return true;
+  const participants = participantsFor(people, profiles, activeUserId, event.attendeeIds.filter((id) => id !== activeUserId));
+  const durationMilliseconds = Date.parse(event.endsAt) - Date.parse(event.startsAt);
+  const exceptionsByOriginalStart = new Map(event.recurrence.exceptions.map((exception) => [exception.originalStartsAt, exception]));
+  const originals = Array.from({ length: event.recurrence.occurrenceCount }, (_, index) => addWeeksAtLocalTime(event.startsAt, event.timeZone, index));
+  const intervals = originals.map((originalStartsAt) => {
+    const exception = exceptionsByOriginalStart.get(originalStartsAt);
+    return exception
+      ? { startsAt: exception.startsAt, endsAt: exception.endsAt }
+      : { startsAt: originalStartsAt, endsAt: new Date(Date.parse(originalStartsAt) + durationMilliseconds).toISOString() };
+  });
+  const rangeStartsAt = Math.min(...intervals.map((interval) => Date.parse(interval.startsAt)));
+  const rangeEndsAt = Math.max(...intervals.map((interval) => Date.parse(interval.endsAt)));
+  const calendarEvents = expandedEvents(events, rangeStartsAt, rangeEndsAt);
+  return intervals.every((interval) => Boolean(candidateForInterval(calendarEvents, participants, {}, interval)));
 }

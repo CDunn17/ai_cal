@@ -124,20 +124,21 @@ describe("CalendarStore", () => {
     expect(store.stateFor("alex").auditEntries[0].action).toBe("discarded");
   });
 
-  it("keeps a bounded weekly recurrence on a reviewable draft and rejects a mismatched start day", () => {
+  it("creates a bounded weekly recurrence only from a validated proposal", () => {
     const store = new CalendarStore(demoData);
-    const draft = store.createDraft("alex", {
-      calendarId: "alex-main",
-      title: "Weekly touchpoint",
-      startsAt: "2026-09-08T14:00:00.000Z",
-      endsAt: "2026-09-08T14:30:00.000Z",
-      timeZone: "America/New_York",
-      visibility: "public",
+    const [proposal] = store.proposeRecurring("alex", {
       attendeeIds: ["sam"],
-      recurrence: { frequency: "weekly", weekday: "tuesday", occurrenceCount: 4 }
+      durationMinutes: 30,
+      rangeStartsAt: "2026-09-08T13:00:00.000Z",
+      rangeEndsAt: "2026-10-07T00:00:00.000Z",
+      requestedStartTime: "10:00",
+      recurrence: { frequency: "weekly", weekday: "tuesday", occurrenceCount: 4 },
+      maxExceptions: 0
     });
+    const draft = store.createRecurringDraftFromProposal("alex", { proposalId: proposal.id, title: "Weekly touchpoint" });
 
     expect(draft.event.recurrence).toEqual({ frequency: "weekly", weekday: "tuesday", occurrenceCount: 4, exceptions: [] });
+    expect(draft.recurrenceSource).toEqual({ proposalId: proposal.id });
     expect(() => store.createDraft("alex", {
       calendarId: "alex-main",
       title: "Wrong weekday",
@@ -147,7 +148,47 @@ describe("CalendarStore", () => {
       visibility: "public",
       attendeeIds: ["sam"],
       recurrence: { frequency: "weekly", weekday: "wednesday", occurrenceCount: 4 }
-    })).toThrow(new CalendarStoreError(400, "A weekly draft must start on its configured recurrence weekday."));
+    })).toThrow(new CalendarStoreError(400, "Recurring events must be created from a current recurring schedule proposal."));
+
+    const oneTimeDraft = store.createDraft("alex", {
+      calendarId: "alex-main",
+      title: "One time",
+      startsAt: "2026-09-10T18:00:00.000Z",
+      endsAt: "2026-09-10T18:30:00.000Z",
+      timeZone: "America/New_York",
+      visibility: "public",
+      attendeeIds: ["sam"]
+    });
+    expect(() => store.updateDraft("alex", oneTimeDraft.id, {
+      expectedRevision: oneTimeDraft.revision,
+      recurrence: { frequency: "weekly", weekday: "thursday", occurrenceCount: 4 }
+    })).toThrow(new CalendarStoreError(400, "Recurring events must be created from a current recurring schedule proposal."));
+  });
+
+  it("revalidates a recurring draft before confirmation and commit", () => {
+    const store = new CalendarStore(demoData);
+    const [proposal] = store.proposeRecurring("alex", {
+      attendeeIds: ["sam"],
+      durationMinutes: 30,
+      rangeStartsAt: "2026-09-08T13:00:00.000Z",
+      rangeEndsAt: "2026-10-07T00:00:00.000Z",
+      requestedStartTime: "15:00",
+      recurrence: { frequency: "weekly", weekday: "tuesday", occurrenceCount: 4 },
+      maxExceptions: 2
+    });
+    const draft = store.createRecurringDraftFromProposal("alex", { proposalId: proposal.id, title: "Weekly touchpoint" });
+    store.create("alex", {
+      calendarId: "alex-main",
+      title: "New conflict",
+      startsAt: "2026-09-22T19:00:00.000Z",
+      endsAt: "2026-09-22T19:30:00.000Z",
+      timeZone: "America/New_York",
+      visibility: "public",
+      attendeeIds: ["sam"]
+    });
+
+    expect(() => store.prepareDraftCommit("alex", draft.id, draft.revision))
+      .toThrow(new CalendarStoreError(409, "This recurring draft is no longer available. Request a fresh recurring schedule proposal."));
   });
 
   it("keeps a time-away change set reviewable until a human confirmation applies its cancellations and transfer", () => {

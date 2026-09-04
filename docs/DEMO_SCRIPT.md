@@ -44,9 +44,9 @@ Close with:
 
 Optional alternate prompt for the recurring-series capability:
 
-> Add a weekly recurring check-in with Sam for the next six months. Respect his preferences where possible, but do not reschedule any of my existing meetings. Create a draft only.
+> Add a weekly recurring check-in with Sam at 3 PM on Tuesdays for the next six months. Respect his preferences where possible, but do not reschedule any of my existing meetings. Create a draft only.
 
-Show `propose_recurring_schedule` checking all 26 occurrences, then point out the one compact exception that moves only the check-in around Alex’s seeded Board briefing. Emphasize that it cannot reveal private blocking details, move an existing event, create a committed series, or send invitations.
+Show `propose_recurring_schedule` checking all 26 occurrences at the requested 3 PM local time, then point out the compact one-off exceptions that move only conflicting check-ins while leaving existing meetings unchanged. Show the returned proposal ID and `create_recurring_event_draft_from_proposal`; this makes it visible that the agent cannot swap in a different unvalidated time. Emphasize that the server rechecks every occurrence before review and commit, cannot reveal private blocking details, move an existing event, create a committed series, or send invitations.
 
 Optional time-away prompt:
 

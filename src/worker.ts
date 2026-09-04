@@ -104,6 +104,9 @@ export default {
       if (request.method === "POST" && url.pathname === "/api/event-drafts") {
         return apiResponse({ draft: await calendarStore.createDraft(activeDemoUserId, await requestJson(request)) }, { status: 201 });
       }
+      if (request.method === "POST" && url.pathname === "/api/recurring-event-drafts") {
+        return apiResponse({ draft: await calendarStore.createRecurringDraftFromProposal(activeDemoUserId, await requestJson(request)) }, { status: 201 });
+      }
       const draftMatch = url.pathname.match(/^\/api\/event-drafts\/([^/]+)$/);
       if (request.method === "PATCH" && draftMatch) {
         return apiResponse({ draft: await calendarStore.updateDraft(activeDemoUserId, decodeURIComponent(draftMatch[1]), await requestJson(request)) });

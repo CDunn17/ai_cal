@@ -13,13 +13,15 @@ export const timeZoneSchema = z
     }
   }, "Expected an IANA timezone identifier.");
 
+export const localClockSchema = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/);
+
 export const personSchema = z.object({
   id: z.string().min(1),
   displayName: z.string().min(1).max(80),
   timeZone: timeZoneSchema,
   workingHours: z.object({
-    start: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
-    end: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/)
+    start: localClockSchema,
+    end: localClockSchema
   }),
   schedulingPreferences: z.object({
     preferredMeetingWindow: z.enum(["morning", "afternoon", "any"]),
@@ -47,8 +49,8 @@ export const schedulingProfileSchema = z.object({
   })).length(5),
   recurringFocusBlocks: z.array(z.object({
     weekday: weekdaySchema,
-    start: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
-    end: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/)
+    start: localClockSchema,
+    end: localClockSchema
   }).refine((block) => block.start < block.end, { message: "A focus block must end after it starts." })).max(10)
 });
 
@@ -132,7 +134,9 @@ export const scheduleRequestSchema = z
 
 export const recurringScheduleRequestSchema = scheduleRequestSchema.extend({
   recurrence: weeklyRecurrenceRequestSchema,
-  maxExceptions: z.number().int().min(0).max(4).default(0)
+  maxExceptions: z.number().int().min(0).max(4).default(0),
+  requestedStartTime: localClockSchema.optional(),
+  timeFlexibilityMinutes: z.number().int().min(0).max(240).multipleOf(15).optional()
 });
 
 export const scheduleCandidateSchema = z.object({
@@ -149,6 +153,24 @@ export const recurringScheduleCandidateSchema = scheduleCandidateSchema.extend({
     startsAt: z.string().datetime({ offset: true }),
     endsAt: z.string().datetime({ offset: true })
   })).min(2).max(26)
+});
+
+export const recurringProposalSchema = z.object({
+  id: z.string().uuid(),
+  ownerId: z.string().min(1),
+  calendarId: z.string().min(1),
+  attendeeIds: z.array(z.string().min(1)).min(1).max(10),
+  candidate: recurringScheduleCandidateSchema,
+  createdAt: z.string().datetime({ offset: true }),
+  expiresAt: z.string().datetime({ offset: true })
+});
+
+export const createRecurringDraftFromProposalInputSchema = z.object({
+  proposalId: z.string().uuid(),
+  title: z.string().min(1).max(140),
+  visibility: eventVisibilitySchema.default("public"),
+  location: z.string().max(160).optional(),
+  agenda: z.string().max(2_000).optional()
 });
 
 export const timeAwayInputSchema = z.object({
@@ -184,7 +206,8 @@ export const eventDraftSchema = z.object({
   event: calendarEventSchema,
   createdAt: z.string().datetime({ offset: true }),
   expiresAt: z.string().datetime({ offset: true }),
-  status: z.literal("pending")
+  status: z.literal("pending"),
+  recurrenceSource: z.object({ proposalId: z.string().uuid() }).optional()
 });
 
 export const draftCommitConfirmationSchema = z.object({
@@ -256,6 +279,8 @@ export type WeeklyRecurrenceRequest = z.infer<typeof weeklyRecurrenceRequestSche
 export type RecurringScheduleRequest = z.infer<typeof recurringScheduleRequestSchema>;
 export type ScheduleCandidate = z.infer<typeof scheduleCandidateSchema>;
 export type RecurringScheduleCandidate = z.infer<typeof recurringScheduleCandidateSchema>;
+export type RecurringProposal = z.infer<typeof recurringProposalSchema>;
+export type CreateRecurringDraftFromProposalInput = z.infer<typeof createRecurringDraftFromProposalInputSchema>;
 export type EventDraft = z.infer<typeof eventDraftSchema>;
 export type DraftCommitConfirmation = z.infer<typeof draftCommitConfirmationSchema>;
 export type ChangeSetCommitConfirmation = z.infer<typeof changeSetCommitConfirmationSchema>;

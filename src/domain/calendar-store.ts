@@ -5,10 +5,12 @@ import {
   changeSetCommitReceiptSchema,
   commitDraftInputSchema,
   commitReceiptSchema,
+  createRecurringDraftFromProposalInputSchema,
   createEventInputSchema,
   demoDataSchema,
   draftCommitConfirmationSchema,
   eventDraftSchema,
+  recurringProposalSchema,
   recurringScheduleRequestSchema,
   scheduleRequestSchema,
   schedulingProfileSchema,
@@ -23,6 +25,7 @@ import {
   type DemoData,
   type DraftCommitConfirmation,
   type EventDraft,
+  type RecurringProposal,
   type SchedulingProfile,
   type TimeAwayChangeSet,
   type TimeAwayInput
@@ -30,7 +33,7 @@ import {
 import { initialSchedulingProfiles } from "./scheduling-profiles";
 import { demoData } from "./seed";
 import { migrateOfficeId } from "./offices";
-import { proposeRecurringSchedule, proposeSchedule } from "./scheduling";
+import { proposeRecurringSchedule, proposeSchedule, recurringEventFitsAvailability } from "./scheduling";
 
 export class CalendarStoreError extends Error {
   constructor(
@@ -62,6 +65,7 @@ export type CalendarStoreSnapshot = Readonly<{
   changeSetCommitReceipts?: ChangeSetCommitReceipt[];
   commitReceipts?: CommitReceipt[];
   commitAttemptTimes?: Readonly<Record<string, string[]>>;
+  recurringProposals?: RecurringProposal[];
 }>;
 
 function canReadEvent(event: CalendarEvent, activeUserId: string, calendarOwnerId: string): boolean {
@@ -124,6 +128,7 @@ export class CalendarStore {
   private readonly calendars;
   private readonly events = new Map<string, CalendarEvent>();
   private readonly drafts = new Map<string, EventDraft>();
+  private readonly recurringProposals = new Map<string, RecurringProposal>();
   private readonly auditEntries: AuditEntry[] = [];
   private readonly commitConfirmations = new Map<string, DraftCommitConfirmation>();
   private readonly changeSets = new Map<string, TimeAwayChangeSet>();
@@ -158,6 +163,10 @@ export class CalendarStore {
     }
     for (const draft of snapshot.drafts) {
       store.drafts.set(draft.id, eventDraftSchema.parse(draft));
+    }
+    for (const proposal of snapshot.recurringProposals ?? []) {
+      const parsed = recurringProposalSchema.parse(proposal);
+      store.recurringProposals.set(parsed.id, parsed);
     }
     store.auditEntries.push(...snapshot.auditEntries.map((entry) => auditEntrySchema.parse(entry)));
     for (const confirmation of snapshot.commitConfirmations ?? []) {
@@ -201,7 +210,8 @@ export class CalendarStore {
       changeSetConfirmations: [...this.changeSetConfirmations.values()],
       changeSetCommitReceipts: [...this.changeSetCommitReceipts.values()],
       commitReceipts: [...this.commitReceipts.values()],
-      commitAttemptTimes: Object.fromEntries(this.commitAttemptTimes)
+      commitAttemptTimes: Object.fromEntries(this.commitAttemptTimes),
+      recurringProposals: [...this.recurringProposals.values()]
     };
   }
 
@@ -236,10 +246,27 @@ export class CalendarStore {
 
   proposeRecurring(activeUserId: string, input: unknown) {
     this.assertUser(activeUserId);
+    this.removeExpiredDrafts();
     const request = recurringScheduleRequestSchema.parse(input);
     this.assertKnownAttendees(request.attendeeIds);
     try {
-      return proposeRecurringSchedule([...this.events.values()], this.people, this.schedulingProfiles, activeUserId, request);
+      const calendar = this.calendarForOwner(activeUserId);
+      const createdAt = new Date().toISOString();
+      return proposeRecurringSchedule([...this.events.values()], this.people, this.schedulingProfiles, activeUserId, request)
+        .map((candidate) => recurringProposalSchema.parse({
+          id: crypto.randomUUID(),
+          ownerId: activeUserId,
+          calendarId: calendar.id,
+          attendeeIds: request.attendeeIds,
+          candidate,
+          createdAt,
+          expiresAt: new Date(Date.parse(createdAt) + 10 * 60_000).toISOString()
+        }))
+        .map((proposal) => {
+          this.recurringProposals.set(proposal.id, proposal);
+          this.trimRecurringProposals();
+          return proposal;
+        });
     } catch (error) {
       throw new CalendarStoreError(400, error instanceof Error ? error.message : "Could not produce recurring scheduling options.");
     }
@@ -379,6 +406,7 @@ export class CalendarStore {
 
   create(activeUserId: string, input: unknown): CalendarEvent {
     this.assertUser(activeUserId);
+    this.rejectDirectRecurrence(input);
     const event = this.createOwnedEvent(activeUserId, input, "confirmed");
 
     this.events.set(event.id, event);
@@ -389,6 +417,7 @@ export class CalendarStore {
   createDraft(activeUserId: string, input: unknown) {
     this.assertUser(activeUserId);
     this.removeExpiredDrafts();
+    this.rejectDirectRecurrence(input);
     const event = this.createOwnedEvent(activeUserId, input, "draft");
     const createdAt = new Date().toISOString();
     const draft = eventDraftSchema.parse({
@@ -402,6 +431,49 @@ export class CalendarStore {
     });
     this.drafts.set(draft.id, draft);
     this.recordDraft("drafted", draft.id, activeUserId, "Created a reviewable draft for “" + event.title + "”.");
+    return draft;
+  }
+
+  createRecurringDraftFromProposal(activeUserId: string, input: unknown): EventDraft {
+    this.assertUser(activeUserId);
+    this.removeExpiredDrafts();
+    const parsed = createRecurringDraftFromProposalInputSchema.parse(input);
+    const proposal = this.recurringProposals.get(parsed.proposalId);
+    if (!proposal || proposal.ownerId !== activeUserId) {
+      throw new CalendarStoreError(404, "Recurring proposal not found or already expired. Request a fresh schedule proposal.");
+    }
+    if (Date.parse(proposal.expiresAt) <= Date.now()) {
+      this.recurringProposals.delete(proposal.id);
+      throw new CalendarStoreError(409, "This recurring proposal expired. Request a fresh schedule proposal.");
+    }
+    const candidate = proposal.candidate;
+    const event = this.createOwnedEvent(activeUserId, {
+      calendarId: proposal.calendarId,
+      title: parsed.title,
+      startsAt: candidate.startsAt,
+      endsAt: candidate.endsAt,
+      timeZone: this.calendarForOwner(activeUserId).timeZone,
+      visibility: parsed.visibility,
+      attendeeIds: proposal.attendeeIds,
+      recurrence: candidate.recurrence,
+      location: parsed.location,
+      agenda: parsed.agenda
+    }, "draft");
+    this.assertRecurringAvailability(activeUserId, event);
+    const createdAt = new Date().toISOString();
+    const draft = eventDraftSchema.parse({
+      id: crypto.randomUUID(),
+      ownerId: activeUserId,
+      revision: 1,
+      event,
+      createdAt,
+      expiresAt: new Date(Date.parse(createdAt) + 24 * 60 * 60_000).toISOString(),
+      status: "pending",
+      recurrenceSource: { proposalId: proposal.id }
+    });
+    this.drafts.set(draft.id, draft);
+    this.recurringProposals.delete(proposal.id);
+    this.recordDraft("drafted", draft.id, activeUserId, "Created a reviewable recurring draft for “" + event.title + "” from a validated proposal.");
     return draft;
   }
 
@@ -437,6 +509,15 @@ export class CalendarStore {
     if (expectedRevision !== draft.revision) {
       throw new CalendarStoreError(409, "This draft changed. Refresh and review it before updating.");
     }
+    if ("recurrence" in changes && changes.recurrence !== undefined) {
+      throw new CalendarStoreError(400, "Recurring events must be created from a current recurring schedule proposal.");
+    }
+    if (draft.event.recurrence) {
+      const schedulingFields = ["calendarId", "startsAt", "endsAt", "timeZone", "attendeeIds", "recurrence", "status"];
+      if (schedulingFields.some((field) => field in changes)) {
+        throw new CalendarStoreError(400, "A recurring draft’s time, attendees, and exceptions are locked to its validated proposal. Request a fresh recurring proposal to change them.");
+      }
+    }
     if (changes.calendarId && changes.calendarId !== draft.event.calendarId) {
       this.assertCalendarOwner(changes.calendarId, activeUserId);
     }
@@ -451,6 +532,7 @@ export class CalendarStore {
       status: "draft"
     });
     this.assertRecurrenceMatchesStart(event);
+    if (event.recurrence) this.assertRecurringAvailability(activeUserId, event);
     const updated = eventDraftSchema.parse({ ...draft, event, revision: draft.revision + 1 });
     this.drafts.set(updated.id, updated);
     this.invalidateConfirmationsFor(updated.id);
@@ -462,6 +544,7 @@ export class CalendarStore {
     this.assertUser(activeUserId);
     this.removeExpiredDrafts();
     const draft = this.getOwnedDraft(activeUserId, draftId, expectedRevision, "reviewing");
+    if (draft.event.recurrence) this.assertRecurringAvailability(activeUserId, draft.event);
     for (const [id, confirmation] of this.commitConfirmations) {
       if (confirmation.draftId === draft.id) this.commitConfirmations.delete(id);
     }
@@ -496,6 +579,7 @@ export class CalendarStore {
     if (!confirmation || confirmation.draftId !== draft.id || confirmation.ownerId !== activeUserId || confirmation.draftRevision !== draft.revision || Date.parse(confirmation.expiresAt) <= Date.now()) {
       throw new CalendarStoreError(409, "This confirmation is no longer valid. Review the draft again before committing.");
     }
+    if (draft.event.recurrence) this.assertRecurringAvailability(activeUserId, draft.event);
 
     const event = calendarEventSchema.parse({ ...draft.event, status: "confirmed" });
     this.events.set(event.id, event);
@@ -518,6 +602,15 @@ export class CalendarStore {
     const { expectedRevision, ...changes } = updateEventInputSchema.parse(input);
     if (expectedRevision !== existing.revision) {
       throw new CalendarStoreError(409, "This event changed. Refresh and review the latest version before saving.");
+    }
+    if ("recurrence" in changes && changes.recurrence !== undefined) {
+      throw new CalendarStoreError(400, "Recurring events must be created from a current recurring schedule proposal.");
+    }
+    if (existing.recurrence) {
+      const schedulingFields = ["calendarId", "startsAt", "endsAt", "timeZone", "attendeeIds", "recurrence", "status"];
+      if (schedulingFields.some((field) => field in changes)) {
+        throw new CalendarStoreError(400, "Recurring event scheduling fields are locked. Create a fresh reviewed proposal to change this series.");
+      }
     }
     if (changes.calendarId && changes.calendarId !== existing.calendarId) {
       this.assertCalendarOwner(changes.calendarId, activeUserId);
@@ -556,6 +649,18 @@ export class CalendarStore {
     });
     this.assertRecurrenceMatchesStart(event);
     return event;
+  }
+
+  private rejectDirectRecurrence(input: unknown): void {
+    if (input && typeof input === "object" && "recurrence" in input && (input as { recurrence?: unknown }).recurrence !== undefined) {
+      throw new CalendarStoreError(400, "Recurring events must be created from a current recurring schedule proposal.");
+    }
+  }
+
+  private assertRecurringAvailability(activeUserId: string, event: CalendarEvent): void {
+    if (!recurringEventFitsAvailability([...this.events.values()], this.people, this.schedulingProfiles, activeUserId, event)) {
+      throw new CalendarStoreError(409, "This recurring draft is no longer available. Request a fresh recurring schedule proposal.");
+    }
   }
 
   private record(action: AuditEntry["action"], event: CalendarEvent, activeUserId: string): void {
@@ -643,6 +748,9 @@ export class CalendarStore {
 
   private removeExpiredDrafts(): void {
     const now = Date.now();
+    for (const [id, proposal] of this.recurringProposals) {
+      if (Date.parse(proposal.expiresAt) <= now) this.recurringProposals.delete(id);
+    }
     for (const [id, draft] of this.drafts) {
       if (Date.parse(draft.expiresAt) <= now) {
         this.drafts.delete(id);
@@ -719,6 +827,14 @@ export class CalendarStore {
     while (this.changeSetCommitReceipts.size > 50) {
       const oldestKey = this.changeSetCommitReceipts.keys().next().value;
       if (oldestKey) this.changeSetCommitReceipts.delete(oldestKey);
+      else return;
+    }
+  }
+
+  private trimRecurringProposals(): void {
+    while (this.recurringProposals.size > 12) {
+      const oldestId = this.recurringProposals.keys().next().value;
+      if (oldestId) this.recurringProposals.delete(oldestId);
       else return;
     }
   }

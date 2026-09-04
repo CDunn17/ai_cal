@@ -1,4 +1,4 @@
-import type { CalendarEvent, EventDraft, RecurringScheduleCandidate, ScheduleCandidate, SchedulingProfile, TimeAwayChangeSet } from "../domain/contracts";
+import type { CalendarEvent, EventDraft, RecurringProposal, ScheduleCandidate, SchedulingProfile, TimeAwayChangeSet } from "../domain/contracts";
 import type { CalendarState } from "../domain/calendar-store";
 
 export type ToolActivity = Readonly<{
@@ -105,17 +105,22 @@ function compactCandidates(candidates: ScheduleCandidate[]) {
   }));
 }
 
-function compactRecurringCandidates(candidates: RecurringScheduleCandidate[]) {
-  return candidates.slice(0, 1).map((candidate) => ({
-    startsAt: candidate.startsAt,
-    endsAt: candidate.endsAt,
-    score: candidate.score,
-    recurrence: candidate.recurrence,
-    occurrenceCount: candidate.occurrences.length,
-    occurrences: candidate.occurrences.slice(0, 2).map(({ startsAt, endsAt }) => ({ startsAt, endsAt })),
-    reasons: candidate.reasons.slice(0, 2).map((reason) => clip(reason, 140)),
-    warnings: candidate.warnings.slice(0, 2).map((warning) => clip(warning, 140))
-  }));
+function compactRecurringProposals(proposals: RecurringProposal[]) {
+  return proposals.slice(0, 1).map((proposal) => {
+    const candidate = proposal.candidate;
+    return {
+      proposalId: proposal.id,
+      expiresAt: proposal.expiresAt,
+      startsAt: candidate.startsAt,
+      endsAt: candidate.endsAt,
+      score: candidate.score,
+      recurrence: candidate.recurrence,
+      occurrenceCount: candidate.occurrences.length,
+      occurrences: candidate.occurrences.slice(0, 2).map(({ startsAt, endsAt }) => ({ startsAt, endsAt })),
+      reasons: candidate.reasons.slice(0, 2).map((reason) => clip(reason, 140)),
+      warnings: candidate.warnings.slice(0, 2).map((warning) => clip(warning, 140))
+    };
+  });
 }
 
 function compactSchedulingProfile(profile: SchedulingProfile, include: string[] | undefined) {
@@ -198,7 +203,9 @@ const weeklyRecurrenceProperties = {
 const recurringScheduleProperties = {
   ...timeRangeProperties,
   recurrence: schema(weeklyRecurrenceRequestProperties, ["frequency", "weekday", "occurrenceCount"]),
-  maxExceptions: { type: "integer", minimum: 0, maximum: 4, description: "Maximum one-off reschedules the planner may use while preserving all existing events." }
+  maxExceptions: { type: "integer", minimum: 0, maximum: 4, description: "Maximum one-off reschedules the planner may use while preserving all existing events." },
+  requestedStartTime: { type: "string", pattern: "^([01]\\d|2[0-3]):[0-5]\\d$", description: "Requested local start time, for example 14:00. With no flexibility, returned base occurrences must use exactly this time." },
+  timeFlexibilityMinutes: { type: "integer", minimum: 0, maximum: 240, multipleOf: 15, description: "Allowed difference from requestedStartTime. Defaults to 0, meaning exact time." }
 };
 
 const timeAwayProperties = {
@@ -218,6 +225,26 @@ const eventProperties = {
   visibility: { type: "string", enum: ["public", "private"] },
   recurrence: schema(weeklyRecurrenceProperties, ["frequency", "weekday", "occurrenceCount"]),
   attendeeIds: { type: "array", items: { type: "string" }, maxItems: 20 },
+  location: { type: "string", maxLength: 160 },
+  agenda: { type: "string", maxLength: 2000 }
+};
+
+const singleEventProperties = {
+  calendarId: eventProperties.calendarId,
+  title: eventProperties.title,
+  startsAt: eventProperties.startsAt,
+  endsAt: eventProperties.endsAt,
+  timeZone: eventProperties.timeZone,
+  visibility: eventProperties.visibility,
+  attendeeIds: eventProperties.attendeeIds,
+  location: eventProperties.location,
+  agenda: eventProperties.agenda
+};
+
+const recurringDraftFromProposalProperties = {
+  proposalId: { type: "string", format: "uuid", description: "An unexpired proposalId returned by propose_recurring_schedule." },
+  title: { type: "string", maxLength: 140 },
+  visibility: { type: "string", enum: ["public", "private"] },
   location: { type: "string", maxLength: 160 },
   agenda: { type: "string", maxLength: 2000 }
 };
@@ -296,12 +323,23 @@ export const calendarTools: WebMCP.ModelContextTool[] = [
   {
     name: "propose_recurring_schedule",
     title: "Propose a recurring schedule",
-    description: "Find a stable weekly time across 2–26 named occurrences in a bounded range. It checks each occurrence against busy time, protected focus blocks, work patterns, travel buffers, and stated preferences. A bounded number of one-off exceptions may preserve existing events without moving them. It returns compact series candidates only and never creates or changes events.",
+    description: "Find a stable weekly time across 2–26 named occurrences in a bounded range. If requestedStartTime is supplied, the base series uses that local time unless explicit flexibility is supplied. It checks each occurrence against busy time, protected focus blocks, work patterns, travel buffers, and stated preferences. A bounded number of one-off exceptions may preserve existing events without moving them. Returns short-lived proposal IDs only; it never creates or changes events.",
     inputSchema: schema(recurringScheduleProperties, ["attendeeIds", "durationMinutes", "rangeStartsAt", "rangeEndsAt", "recurrence"]),
     annotations: { readOnlyHint: true, untrustedContentHint: true },
     execute: async (input, { signal }) => runTool("propose_recurring_schedule", "read", async () => {
-      const response = await api<{ proposals: RecurringScheduleCandidate[] }>("/api/recurring-proposals", { method: "POST", body: JSON.stringify(input) }, signal);
-      return { proposals: compactRecurringCandidates(response.proposals) };
+      const response = await api<{ proposals: RecurringProposal[] }>("/api/recurring-proposals", { method: "POST", body: JSON.stringify(input) }, signal);
+      return { proposals: compactRecurringProposals(response.proposals) };
+    }, input)
+  },
+  {
+    name: "create_recurring_event_draft_from_proposal",
+    title: "Create recurring event draft from proposal",
+    description: "Create one visible pending recurring draft from an unexpired proposal returned by propose_recurring_schedule. The selected time, attendees, and exceptions are server-bound to that proposal and revalidated immediately. This cannot create a committed event or send invitations.",
+    inputSchema: schema(recurringDraftFromProposalProperties, ["proposalId", "title"]),
+    annotations: { readOnlyHint: false, untrustedContentHint: true },
+    execute: async (input, { signal }) => runTool("create_recurring_event_draft_from_proposal", "draft", async () => {
+      const response = await api<{ draft: EventDraft }>("/api/recurring-event-drafts", { method: "POST", body: JSON.stringify(input) }, signal);
+      return { draft: compactDraft(response.draft) };
     }, input)
   },
   {
@@ -348,8 +386,8 @@ export const calendarTools: WebMCP.ModelContextTool[] = [
   {
     name: "create_event_draft",
     title: "Create event draft",
-    description: "Create a visible, pending single or bounded weekly-series draft owned by the active user. A weekly series must specify 2–26 occurrences and at most four reviewed one-off exceptions. This never creates a committed event or sends invitations.",
-    inputSchema: schema(eventProperties, ["calendarId", "title", "startsAt", "endsAt", "timeZone", "visibility"]),
+    description: "Create a visible, pending one-time event draft owned by the active user. For a recurring series, first use propose_recurring_schedule, then create_recurring_event_draft_from_proposal. This never creates a committed event or sends invitations.",
+    inputSchema: schema(singleEventProperties, ["calendarId", "title", "startsAt", "endsAt", "timeZone", "visibility"]),
     annotations: { readOnlyHint: false, untrustedContentHint: true },
     execute: async (input, { signal }) => runTool("create_event_draft", "draft", async () => {
       const response = await api<{ draft: EventDraft }>("/api/event-drafts", { method: "POST", body: JSON.stringify(input) }, signal);
@@ -359,8 +397,8 @@ export const calendarTools: WebMCP.ModelContextTool[] = [
   {
     name: "update_event_draft",
     title: "Update event draft",
-    description: "Update a visible pending draft by ID and reviewed revision. This never creates a committed event or sends invitations.",
-    inputSchema: schema({ draftId: { type: "string" }, expectedRevision: { type: "integer", minimum: 1 }, ...eventProperties }, ["draftId", "expectedRevision"]),
+    description: "Update a visible pending one-time draft by ID and reviewed revision. Recurring scheduling fields are locked to their validated proposal; request a fresh proposal to change a recurring series. This never creates a committed event or sends invitations.",
+    inputSchema: schema({ draftId: { type: "string" }, expectedRevision: { type: "integer", minimum: 1 }, ...singleEventProperties }, ["draftId", "expectedRevision"]),
     annotations: { readOnlyHint: false, untrustedContentHint: true },
     execute: async (input, { signal }) => runTool("update_event_draft", "draft", async () => {
       const { draftId, ...changes } = input;
