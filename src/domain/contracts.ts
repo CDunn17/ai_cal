@@ -81,7 +81,8 @@ export const weeklyRecurrenceRequestSchema = z.object({
 
 export const weeklyRecurrenceSchema = z.object({
   ...weeklyRecurrenceRequestSchema.shape,
-  exceptions: z.array(recurrenceExceptionSchema).max(4).default([])
+  exceptions: z.array(recurrenceExceptionSchema).max(4).default([]),
+  cancelledOriginalStartsAt: z.array(z.string().datetime({ offset: true })).max(4).default([])
 });
 
 const eventFieldsSchema = z.object({
@@ -196,6 +197,7 @@ export const timeAwayChangeSetSchema = z.object({
   status: z.literal("pending"),
   timeAwayEvent: calendarEventSchema,
   cancellations: z.array(z.object({ eventId: z.string().min(1), expectedRevision: z.number().int().positive() })).max(20),
+  recurrenceCancellations: z.array(z.object({ eventId: z.string().min(1), expectedRevision: z.number().int().positive(), originalStartsAt: z.string().datetime({ offset: true }) })).max(20).default([]),
   transfers: z.array(z.object({ eventId: z.string().min(1), expectedRevision: z.number().int().positive(), newOwnerId: z.string().min(1) })).max(10)
 });
 

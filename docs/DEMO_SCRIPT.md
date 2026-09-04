@@ -52,6 +52,6 @@ Optional time-away prompt:
 
 > Add my vacation for the week of October 12th. Cancel all meetings that week except Team standup, and transfer that to Maya while I’m out. Create a draft only.
 
-Show `get_events_in_range`, `propose_time_away_changes`, and `create_time_away_change_set_draft`. The resulting panel should show a single before/after plan: private Vacation, two cancellations, and Team standup transferred to approved delegate Maya. Open its confirmation dialog but do not apply it in the recording unless you also show the audit trail. Emphasize that the agent only staged the plan and no notifications are sent.
+Show `get_events_in_range`, `propose_time_away_changes`, and `create_time_away_change_set_draft`. The resulting panel should show a single before/after plan: private Vacation, cancellations for each affected meeting (including a recurring occurrence when the recurring demo ran first), and Team standup transferred to approved delegate Maya. Open its confirmation dialog but do not apply it in the recording unless you also show the audit trail. Emphasize that the agent only staged the plan and no notifications are sent.
 
 Before recording, use the deployed URL, start from the seeded state, and confirm the browser shows origin isolation and registered tools.

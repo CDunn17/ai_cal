@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type CSSProperties, type FormEvent } from
 import type { CalendarEvent, ChangeSetCommitConfirmation, DraftCommitConfirmation, EventDraft, ScheduleCandidate, SchedulingProfile, TimeAwayChangeSet } from "./domain/contracts";
 import type { CalendarState } from "./domain/calendar-store";
 import { formatTravelMinutes, officeById, OFFICES, type OfficeId } from "./domain/offices";
+import { expandCalendarEventOccurrences } from "./domain/recurrence";
 import { ACTIVITY_EVENT, registerCalendarTools, STATE_CHANGED_EVENT, type ToolActivity } from "./webmcp/calendar-tools";
 
 const DISPLAY_TIME_ZONE = "America/New_York";
@@ -330,6 +331,9 @@ export function App() {
   const selectedProfilePerson = selectedProfileUserId ? state?.people.find((person) => person.id === selectedProfileUserId) ?? null : null;
   const profileOfficeName = (personId: string) => officeById(profilesByPersonId.get(personId)?.defaultOfficeId ?? "downtown-manhattan").name;
   const visibleWeekDays = useMemo(() => workweekDays(visibleWeekStart), [visibleWeekStart]);
+  const calendarOccurrences = useMemo(() => (state?.events ?? []).flatMap((sourceEvent) =>
+    expandCalendarEventOccurrences(sourceEvent).map((event) => ({ event, sourceEventId: sourceEvent.id }))
+  ), [state?.events]);
 
   const findAvailability = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -634,7 +638,7 @@ export function App() {
                 <div className={"day-header" + (day.key === DEMO_REFERENCE_DAY ? " is-reference-day" : "")}><span>{day.short}</span><strong>{day.day}</strong></div>
                 <div className="day-body">
                   {HOURS.map((hour) => <div className="hour-line" key={hour} />)}
-                  {state.events.filter((event) => eventIntersectsDay(event, day.key)).map((event) => {
+                  {calendarOccurrences.filter(({ event }) => eventIntersectsDay(event, day.key)).map(({ event, sourceEventId }) => {
                     const layout = eventLayoutForDay(event, day.key);
                     if (!layout) return null;
                     const isBusyOnly = event.visibility === "private" && event.title === "Busy";
@@ -650,8 +654,8 @@ export function App() {
                         type="button"
                         className={"event-block" + (isPrivateEvent ? " private-event" : "") + (isBusyOnly ? " busy-only" : "") + (spansMultipleDays ? " multi-day-event" : "")}
                         style={style}
-                        key={event.id}
-                        onClick={() => setSelectedEventId(event.id)}
+                        key={sourceEventId + "-" + event.startsAt}
+                        onClick={() => setSelectedEventId(sourceEventId)}
                       >
                         <strong>{event.title}</strong>
                         <span>{spansMultipleDays ? "Multi-day" : timeLabel(event.startsAt)}</span>
@@ -691,7 +695,7 @@ export function App() {
           <p>{new Intl.DateTimeFormat("en-US", { timeZone: DISPLAY_TIME_ZONE, month: "short", day: "numeric" }).format(new Date(selectedChangeSet.timeAwayEvent.startsAt))}–{new Intl.DateTimeFormat("en-US", { timeZone: DISPLAY_TIME_ZONE, month: "short", day: "numeric" }).format(new Date(Date.parse(selectedChangeSet.timeAwayEvent.endsAt) - 1))}</p>
           <div className="event-diff">
             <div><span>Before</span><strong>Your calendar stays unchanged</strong><p>Nothing is cancelled, transferred, or marked as time away yet.</p></div>
-            <div><span>After approval</span><strong>{selectedChangeSet.cancellations.length} cancellation{selectedChangeSet.cancellations.length === 1 ? "" : "s"} · {selectedChangeSet.transfers.length} transfer{selectedChangeSet.transfers.length === 1 ? "" : "s"}</strong><p>{selectedChangeSet.cancellations.map((operation) => state.events.find((event) => event.id === operation.eventId)?.title ?? "Changed event").join(", ") || "No cancellations"}</p><p>{selectedChangeSet.transfers.map((operation) => (state.events.find((event) => event.id === operation.eventId)?.title ?? "Changed event") + " → " + (state.people.find((person) => person.id === operation.newOwnerId)?.displayName ?? "delegate")).join(", ") || "No transfers"}</p></div>
+            <div><span>After approval</span><strong>{selectedChangeSet.cancellations.length + selectedChangeSet.recurrenceCancellations.length} cancellation{selectedChangeSet.cancellations.length + selectedChangeSet.recurrenceCancellations.length === 1 ? "" : "s"} · {selectedChangeSet.transfers.length} transfer{selectedChangeSet.transfers.length === 1 ? "" : "s"}</strong><p>{selectedChangeSet.cancellations.map((operation) => state.events.find((event) => event.id === operation.eventId)?.title ?? "Changed event").join(", ") || "No one-time cancellations"}</p>{selectedChangeSet.recurrenceCancellations.length > 0 && <p>{selectedChangeSet.recurrenceCancellations.map((operation) => (state.events.find((event) => event.id === operation.eventId)?.title ?? "Recurring event") + " on " + new Intl.DateTimeFormat("en-US", { timeZone: DISPLAY_TIME_ZONE, month: "short", day: "numeric" }).format(new Date(operation.originalStartsAt))).join(", ")}</p>}<p>{selectedChangeSet.transfers.map((operation) => (state.events.find((event) => event.id === operation.eventId)?.title ?? "Changed event") + " → " + (state.people.find((person) => person.id === operation.newOwnerId)?.displayName ?? "delegate")).join(", ") || "No transfers"}</p></div>
           </div>
           <p className="draft-expiry">Plan expires {new Intl.DateTimeFormat("en-US", { timeZone: DISPLAY_TIME_ZONE, month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }).format(new Date(selectedChangeSet.expiresAt))}.</p>
           <div className="detail-actions"><button type="button" onClick={() => void discardChangeSet(selectedChangeSet)}>Discard plan</button><button type="button" className="primary-button" onClick={() => void prepareChangeSetCommit(selectedChangeSet)}>Review &amp; confirm</button></div>

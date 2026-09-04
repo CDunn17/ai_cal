@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { demoData } from "./seed";
+import { expandCalendarEventOccurrences } from "./recurrence";
 import { busyBlocksFor, eventsOverlap, proposeRecurringSchedule, proposeSchedule } from "./scheduling";
 
 describe("scheduling foundations", () => {
@@ -150,5 +151,30 @@ describe("scheduling foundations", () => {
         ]
       }
     });
+  });
+
+  it("expands every committed recurrence exception for calendar rendering", () => {
+    const [proposal] = proposeRecurringSchedule(demoData.events, demoData.people, demoData.schedulingProfiles ?? [], "alex", {
+      attendeeIds: ["sam"],
+      durationMinutes: 30,
+      rangeStartsAt: "2026-09-08T13:00:00.000Z",
+      rangeEndsAt: "2026-10-07T00:00:00.000Z",
+      requestedStartTime: "15:00",
+      recurrence: { frequency: "weekly", weekday: "tuesday", occurrenceCount: 4 },
+      maxExceptions: 2
+    });
+    const series = {
+      ...demoData.events[0],
+      id: "weekly-touchpoint",
+      startsAt: proposal.startsAt,
+      endsAt: proposal.endsAt,
+      timeZone: "America/New_York",
+      recurrence: proposal.recurrence
+    };
+
+    expect(expandCalendarEventOccurrences(series).map((occurrence) => occurrence.startsAt)).toEqual(
+      expect.arrayContaining(proposal.occurrences.map((occurrence) => occurrence.startsAt))
+    );
+    expect(expandCalendarEventOccurrences(series)).toHaveLength(4);
   });
 });

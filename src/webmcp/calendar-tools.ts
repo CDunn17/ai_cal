@@ -90,6 +90,8 @@ function compactChangeSet(changeSet: TimeAwayChangeSet) {
     timeAway: compactEvent(changeSet.timeAwayEvent),
     cancellationCount: changeSet.cancellations.length,
     cancellations: changeSet.cancellations.slice(0, 5),
+    recurrenceCancellationCount: changeSet.recurrenceCancellations.length,
+    recurrenceCancellations: changeSet.recurrenceCancellations.slice(0, 5),
     transferCount: changeSet.transfers.length,
     transfers: changeSet.transfers.slice(0, 5)
   };
@@ -349,11 +351,13 @@ export const calendarTools: WebMCP.ModelContextTool[] = [
     inputSchema: schema(timeAwayProperties, ["startsAt", "endsAt"]),
     annotations: { readOnlyHint: true, untrustedContentHint: true },
     execute: async (input, { signal }) => runTool("propose_time_away_changes", "read", async () => {
-      const response = await api<{ plan: { timeAway: { startsAt: string; endsAt: string; title: string }; cancellations: unknown[]; transfers: unknown[] } }>("/api/time-away-proposals", { method: "POST", body: JSON.stringify(input) }, signal);
+      const response = await api<{ plan: { timeAway: { startsAt: string; endsAt: string; title: string }; cancellations: unknown[]; recurrenceCancellations: unknown[]; transfers: unknown[] } }>("/api/time-away-proposals", { method: "POST", body: JSON.stringify(input) }, signal);
       return {
         timeAway: response.plan.timeAway,
         cancellationCount: response.plan.cancellations.length,
         cancellations: response.plan.cancellations.slice(0, 5),
+        recurrenceCancellationCount: response.plan.recurrenceCancellations.length,
+        recurrenceCancellations: response.plan.recurrenceCancellations.slice(0, 5),
         transferCount: response.plan.transfers.length,
         transfers: response.plan.transfers.slice(0, 5)
       };

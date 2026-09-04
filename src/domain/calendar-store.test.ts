@@ -131,13 +131,13 @@ describe("CalendarStore", () => {
       durationMinutes: 30,
       rangeStartsAt: "2026-09-08T13:00:00.000Z",
       rangeEndsAt: "2026-10-07T00:00:00.000Z",
-      requestedStartTime: "10:00",
+      requestedStartTime: "09:00",
       recurrence: { frequency: "weekly", weekday: "tuesday", occurrenceCount: 4 },
-      maxExceptions: 0
+      maxExceptions: 1
     });
     const draft = store.createRecurringDraftFromProposal("alex", { proposalId: proposal.id, title: "Weekly touchpoint" });
 
-    expect(draft.event.recurrence).toEqual({ frequency: "weekly", weekday: "tuesday", occurrenceCount: 4, exceptions: [] });
+    expect(draft.event.recurrence).toEqual({ frequency: "weekly", weekday: "tuesday", occurrenceCount: 4, exceptions: [], cancelledOriginalStartsAt: [] });
     expect(draft.recurrenceSource).toEqual({ proposalId: proposal.id });
     expect(() => store.createDraft("alex", {
       calendarId: "alex-main",
@@ -189,6 +189,71 @@ describe("CalendarStore", () => {
 
     expect(() => store.prepareDraftCommit("alex", draft.id, draft.revision))
       .toThrow(new CalendarStoreError(409, "This recurring draft is no longer available. Request a fresh recurring schedule proposal."));
+  });
+
+  it("rejects one-time drafts that conflict with current availability", () => {
+    const store = new CalendarStore(demoData);
+
+    expect(() => store.createDraft("alex", {
+      calendarId: "alex-main",
+      title: "Conflicting review",
+      startsAt: "2026-09-09T18:00:00.000Z",
+      endsAt: "2026-09-09T18:30:00.000Z",
+      timeZone: "America/New_York",
+      visibility: "public",
+      attendeeIds: ["maya"]
+    })).toThrow(new CalendarStoreError(409, "This draft is no longer available. Request a fresh scheduling proposal."));
+  });
+
+  it("rechecks a one-time draft when calendar availability changes before review", () => {
+    const store = new CalendarStore(demoData);
+    const draft = store.createDraft("alex", {
+      calendarId: "alex-main",
+      title: "Launch prep",
+      startsAt: "2026-09-08T20:15:00.000Z",
+      endsAt: "2026-09-08T20:45:00.000Z",
+      timeZone: "America/New_York",
+      visibility: "public",
+      attendeeIds: ["maya", "sam"]
+    });
+    store.create("alex", {
+      calendarId: "alex-main",
+      title: "New conflict",
+      startsAt: "2026-09-08T20:15:00.000Z",
+      endsAt: "2026-09-08T20:45:00.000Z",
+      timeZone: "America/New_York",
+      visibility: "public",
+      attendeeIds: ["maya", "sam"]
+    });
+
+    expect(() => store.prepareDraftCommit("alex", draft.id, draft.revision))
+      .toThrow(new CalendarStoreError(409, "This draft is no longer available. Request a fresh scheduling proposal."));
+  });
+
+  it("cancels only the recurring occurrences inside an approved time-away range", () => {
+    const store = new CalendarStore(demoData);
+    const [proposal] = store.proposeRecurring("alex", {
+      attendeeIds: ["sam"],
+      durationMinutes: 30,
+      rangeStartsAt: "2026-09-08T13:00:00.000Z",
+      rangeEndsAt: "2026-10-28T00:00:00.000Z",
+      requestedStartTime: "09:00",
+      recurrence: { frequency: "weekly", weekday: "tuesday", occurrenceCount: 7 },
+      maxExceptions: 1
+    });
+    const draft = store.createRecurringDraftFromProposal("alex", { proposalId: proposal.id, title: "Weekly touchpoint" });
+    const confirmation = store.prepareDraftCommit("alex", draft.id, draft.revision);
+    const series = store.commitDraft("alex", draft.id, { expectedRevision: draft.revision, confirmationId: confirmation.id }, "recurring-time-away-series-001");
+    const changeSet = store.createTimeAwayChangeSet("alex", {
+      startsAt: "2026-10-12T04:00:00.000Z",
+      endsAt: "2026-10-17T04:00:00.000Z"
+    });
+
+    expect(changeSet.recurrenceCancellations).toEqual([{ eventId: series.id, expectedRevision: series.revision, originalStartsAt: "2026-10-13T13:00:00.000Z" }]);
+    const timeAwayConfirmation = store.prepareTimeAwayChangeSetCommit("alex", changeSet.id, changeSet.revision);
+    store.commitTimeAwayChangeSet("alex", changeSet.id, { expectedRevision: changeSet.revision, confirmationId: timeAwayConfirmation.id }, "recurring-time-away-commit-001");
+
+    expect(store.stateFor("alex").events.find((event) => event.id === series.id)?.recurrence?.cancelledOriginalStartsAt).toEqual(["2026-10-13T13:00:00.000Z"]);
   });
 
   it("keeps a time-away change set reviewable until a human confirmation applies its cancellations and transfer", () => {

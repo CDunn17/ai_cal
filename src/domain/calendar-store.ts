@@ -33,7 +33,8 @@ import {
 import { initialSchedulingProfiles } from "./scheduling-profiles";
 import { demoData } from "./seed";
 import { migrateOfficeId } from "./offices";
-import { proposeRecurringSchedule, proposeSchedule, recurringEventFitsAvailability } from "./scheduling";
+import { eventFitsAvailability, proposeRecurringSchedule, proposeSchedule, recurringEventFitsAvailability } from "./scheduling";
+import { addWeeksAtLocalTime } from "./recurrence";
 
 export class CalendarStoreError extends Error {
   constructor(
@@ -284,6 +285,7 @@ export class CalendarStore {
     return {
       timeAway: { startsAt: plan.input.startsAt, endsAt: plan.input.endsAt, title: plan.input.title },
       cancellations: plan.cancellations.map((event) => this.changeEventProjection(event)),
+      recurrenceCancellations: plan.recurrenceCancellations.map(({ event, originalStartsAt }) => ({ ...this.changeEventProjection(event), originalStartsAt })),
       transfers: plan.transfers.map(({ event, newOwnerId }) => ({ ...this.changeEventProjection(event), newOwnerId }))
     };
   }
@@ -313,6 +315,7 @@ export class CalendarStore {
       status: "pending",
       timeAwayEvent,
       cancellations: plan.cancellations.map((event) => ({ eventId: event.id, expectedRevision: event.revision })),
+      recurrenceCancellations: plan.recurrenceCancellations.map(({ event, originalStartsAt }) => ({ eventId: event.id, expectedRevision: event.revision, originalStartsAt })),
       transfers: plan.transfers.map(({ event, newOwnerId }) => ({ eventId: event.id, expectedRevision: event.revision, newOwnerId }))
     });
     this.changeSets.set(changeSet.id, changeSet);
@@ -360,7 +363,8 @@ export class CalendarStore {
     if (!confirmation || confirmation.changeSetId !== changeSet.id || confirmation.ownerId !== activeUserId || confirmation.changeSetRevision !== changeSet.revision || Date.parse(confirmation.expiresAt) <= Date.now()) {
       throw new CalendarStoreError(409, "This confirmation is no longer valid. Review the time-away changes again before applying them.");
     }
-    const affected = [...changeSet.cancellations, ...changeSet.transfers].map((operation) => this.getOwnedActiveEvent(activeUserId, operation.eventId, operation.expectedRevision));
+    const affected = [...changeSet.cancellations, ...changeSet.recurrenceCancellations, ...changeSet.transfers]
+      .map((operation) => this.getOwnedActiveEvent(activeUserId, operation.eventId, operation.expectedRevision));
     const events: CalendarEvent[] = [];
     const timeAwayEvent = calendarEventSchema.parse({ ...changeSet.timeAwayEvent, status: "confirmed" });
     this.events.set(timeAwayEvent.id, timeAwayEvent);
@@ -371,6 +375,26 @@ export class CalendarStore {
       const cancelled = calendarEventSchema.parse({ ...event, status: "cancelled", revision: event.revision + 1 });
       this.events.set(cancelled.id, cancelled);
       this.record("cancelled", cancelled, activeUserId);
+    }
+    const recurrenceOperationsByEvent = new Map<string, typeof changeSet.recurrenceCancellations>();
+    for (const operation of changeSet.recurrenceCancellations) {
+      recurrenceOperationsByEvent.set(operation.eventId, [...(recurrenceOperationsByEvent.get(operation.eventId) ?? []), operation]);
+    }
+    for (const [eventId, operations] of recurrenceOperationsByEvent) {
+      const event = affected.find((candidate) => candidate.id === eventId)!;
+      if (!event.recurrence) throw new CalendarStoreError(409, "A recurring occurrence changed. Review the time-away changes again.");
+      const updated = calendarEventSchema.parse({
+        ...event,
+        revision: event.revision + 1,
+        recurrence: {
+          ...event.recurrence,
+          cancelledOriginalStartsAt: [...new Set([...event.recurrence.cancelledOriginalStartsAt, ...operations.map((operation) => operation.originalStartsAt)])]
+        }
+      });
+      this.assertRecurrenceMatchesStart(updated);
+      this.events.set(updated.id, updated);
+      events.push(updated);
+      this.recordDraft("cancelled", updated.id, activeUserId, "Cancelled " + operations.length + " occurrence" + (operations.length === 1 ? "" : "s") + " of “" + updated.title + "” during time away.");
     }
     for (const operation of changeSet.transfers) {
       const event = affected.find((candidate) => candidate.id === operation.eventId)!;
@@ -419,6 +443,7 @@ export class CalendarStore {
     this.removeExpiredDrafts();
     this.rejectDirectRecurrence(input);
     const event = this.createOwnedEvent(activeUserId, input, "draft");
+    this.assertOneTimeAvailability(activeUserId, event);
     const createdAt = new Date().toISOString();
     const draft = eventDraftSchema.parse({
       id: crypto.randomUUID(),
@@ -533,6 +558,7 @@ export class CalendarStore {
     });
     this.assertRecurrenceMatchesStart(event);
     if (event.recurrence) this.assertRecurringAvailability(activeUserId, event);
+    else this.assertOneTimeAvailability(activeUserId, event);
     const updated = eventDraftSchema.parse({ ...draft, event, revision: draft.revision + 1 });
     this.drafts.set(updated.id, updated);
     this.invalidateConfirmationsFor(updated.id);
@@ -545,6 +571,7 @@ export class CalendarStore {
     this.removeExpiredDrafts();
     const draft = this.getOwnedDraft(activeUserId, draftId, expectedRevision, "reviewing");
     if (draft.event.recurrence) this.assertRecurringAvailability(activeUserId, draft.event);
+    else this.assertOneTimeAvailability(activeUserId, draft.event);
     for (const [id, confirmation] of this.commitConfirmations) {
       if (confirmation.draftId === draft.id) this.commitConfirmations.delete(id);
     }
@@ -580,6 +607,7 @@ export class CalendarStore {
       throw new CalendarStoreError(409, "This confirmation is no longer valid. Review the draft again before committing.");
     }
     if (draft.event.recurrence) this.assertRecurringAvailability(activeUserId, draft.event);
+    else this.assertOneTimeAvailability(activeUserId, draft.event);
 
     const event = calendarEventSchema.parse({ ...draft.event, status: "confirmed" });
     this.events.set(event.id, event);
@@ -663,6 +691,12 @@ export class CalendarStore {
     }
   }
 
+  private assertOneTimeAvailability(activeUserId: string, event: CalendarEvent): void {
+    if (!eventFitsAvailability([...this.events.values()], this.people, this.schedulingProfiles, activeUserId, event)) {
+      throw new CalendarStoreError(409, "This draft is no longer available. Request a fresh scheduling proposal.");
+    }
+  }
+
   private record(action: AuditEntry["action"], event: CalendarEvent, activeUserId: string): void {
     const actionVerb = action === "created"
       ? "Created"
@@ -722,13 +756,40 @@ export class CalendarStore {
       .sort((left, right) => Date.parse(left.startsAt) - Date.parse(right.startsAt));
   }
 
+  private ownedRecurringOccurrencesInRange(activeUserId: string, startsAt: string, endsAt: string): Array<{ event: CalendarEvent; originalStartsAt: string }> {
+    const rangeStartsAt = Date.parse(startsAt);
+    const rangeEndsAt = Date.parse(endsAt);
+    return [...this.events.values()]
+      .filter((event) => {
+        const calendar = this.getCalendar(event.calendarId);
+        return calendar.ownerId === activeUserId && (event.status === "confirmed" || event.status === "tentative") && Boolean(event.recurrence);
+      })
+      .flatMap((event) => {
+        const duration = Date.parse(event.endsAt) - Date.parse(event.startsAt);
+        const exceptionsByOriginalStart = new Map(event.recurrence!.exceptions.map((exception) => [exception.originalStartsAt, exception]));
+        const cancelled = new Set(event.recurrence!.cancelledOriginalStartsAt);
+        return Array.from({ length: event.recurrence!.occurrenceCount }, (_, index) => {
+          const originalStartsAt = addWeeksAtLocalTime(event.startsAt, event.timeZone, index);
+          if (cancelled.has(originalStartsAt)) return undefined;
+          const exception = exceptionsByOriginalStart.get(originalStartsAt);
+          const occurrenceStartsAt = exception?.startsAt ?? originalStartsAt;
+          const occurrenceEndsAt = exception?.endsAt ?? new Date(Date.parse(originalStartsAt) + duration).toISOString();
+          return Date.parse(occurrenceStartsAt) < rangeEndsAt && Date.parse(occurrenceEndsAt) > rangeStartsAt
+            ? { event, originalStartsAt }
+            : undefined;
+        }).filter((occurrence): occurrence is { event: CalendarEvent; originalStartsAt: string } => Boolean(occurrence));
+      });
+  }
+
   private timeAwayPlan(activeUserId: string, input: unknown): {
     input: TimeAwayInput;
     cancellations: CalendarEvent[];
+    recurrenceCancellations: Array<{ event: CalendarEvent; originalStartsAt: string }>;
     transfers: Array<{ event: CalendarEvent; newOwnerId: string }>;
   } {
     const parsed = timeAwayInputSchema.parse(input);
-    const affectedEvents = this.ownedActiveEventsInRange(activeUserId, parsed.startsAt, parsed.endsAt);
+    const affectedEvents = this.ownedActiveEventsInRange(activeUserId, parsed.startsAt, parsed.endsAt).filter((event) => !event.recurrence);
+    const recurrenceCancellations = this.ownedRecurringOccurrencesInRange(activeUserId, parsed.startsAt, parsed.endsAt);
     const transferIds = new Set(parsed.transferEventIds);
     const unknownTransfer = parsed.transferEventIds.find((eventId) => !affectedEvents.some((event) => event.id === eventId));
     if (unknownTransfer) throw new CalendarStoreError(400, "A requested transfer must be an active event owned by you during the time-away range.");
@@ -736,6 +797,7 @@ export class CalendarStore {
     return {
       input: parsed,
       cancellations: affectedEvents.filter((event) => !transferIds.has(event.id)),
+      recurrenceCancellations,
       transfers: affectedEvents
         .filter((event) => transferIds.has(event.id))
         .map((event) => ({ event, newOwnerId: parsed.transferToUserId! }))
@@ -901,6 +963,15 @@ export class CalendarStore {
         throw new CalendarStoreError(400, "A recurrence exception must replace one distinct occurrence in this weekly series.");
       }
       exceptionStarts.add(exception.originalStartsAt);
+    }
+    const cancelledStarts = new Set<string>();
+    for (const originalStartsAt of event.recurrence.cancelledOriginalStartsAt) {
+      const original = localEventParts(originalStartsAt, event.timeZone);
+      const dayOffset = (Date.UTC(Number(original.year), Number(original.month) - 1, Number(original.day)) - Date.UTC(Number(base.year), Number(base.month) - 1, Number(base.day))) / (24 * 60 * 60_000);
+      if (original.hour !== base.hour || original.minute !== base.minute || dayOffset < 0 || dayOffset % 7 !== 0 || dayOffset / 7 >= event.recurrence.occurrenceCount || cancelledStarts.has(originalStartsAt) || exceptionStarts.has(originalStartsAt)) {
+        throw new CalendarStoreError(400, "A cancelled recurrence occurrence must replace one distinct non-exception occurrence in this weekly series.");
+      }
+      cancelledStarts.add(originalStartsAt);
     }
   }
 }
